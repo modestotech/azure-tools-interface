@@ -2,15 +2,17 @@
 
 ## Project overview
 
-A client-side SPA that maps **Azure API Management (APIM) policies** to **Microsoft Entra ID identities**. Given two access tokens (ARM and Graph), a subscription and a tenant, it answers:
+A client-side SPA that maps **Azure API Management (APIM) policies** to **Microsoft Entra ID identities**. Given two access tokens (ARM and Graph) and a tenant, the user picks a subscription, an APIM instance and **exactly one API**. For that API it answers:
 
-- Which APIs and operations exist in an APIM instance, and which policies protect them
+- Which operations the API has, and which policies protect them
 - Which service principals (apps / managed identities) are allowed to call each operation
 - Who those service principals are (display name, appId, owners, type)
 - If access is granted through a group, who is in that group (direct members only — nested groups are not expanded)
 - Which backend each operation routes to: backend type, URL, the Azure resource behind it, and how APIM authenticates to it (including APIM's own managed identity and what it has access to)
 
-**Scope:** the app targets one company's APIM pattern, not every possible APIM setup. `PROJECT_PLAN.md` §1 describes it, and the reference policy is `samples-raw/api-policy.xml` (an anonymized copy will live in `src/test/fixtures/`). Anything outside the pattern is flagged for manual review, not supported.
+**One API at a time.** The analysis always runs against a single selected API, never the whole APIM instance. The only instance-wide calls are the ones needed to fill the pickers (list subscriptions, APIM services, API names), plus the service itself (for its `identity`) and the global policy. Don't add an "all APIs" option.
+
+**Pattern:** the app targets one company's APIM pattern, not every possible APIM setup. `PROJECT_PLAN.md` §1 describes it, and the reference policy is `samples-raw/api-policy.xml` (an anonymized copy will live in `src/test/fixtures/`). Anything outside the pattern is flagged for manual review, not supported.
 
 The results are shown as interactive visualizations (graph + tables). More visualizations and "scripts" (read-only analyses) will be added later, so the architecture must make adding new ones cheap.
 
@@ -45,7 +47,7 @@ az account get-access-token --resource https://graph.microsoft.com --tenant <TEN
 ```
 
 Rules:
-- Tokens, subscription ID and tenant ID are held **in memory only** (React state / store). Never write them to `localStorage`, `sessionStorage`, cookies, URLs, logs or error messages.
+- Tokens, the selected subscription ID and tenant ID are held **in memory only** (React state / store). Never write them to `localStorage`, `sessionStorage`, cookies, URLs, logs or error messages.
 - The on-screen request log shows URLs with the subscription ID and tenant ID masked as `{sub}` / `{tid}` by default. An in-memory "reveal" toggle may unmask them. Tokens are never shown, and log exports are always masked.
 - Decode the JWT (no validation needed) to show `aud`, `tid`, `upn`/`oid` and `exp`. Warn if `aud` doesn't match the expected resource, if `tid` doesn't match the entered tenant, or if the token expires soon (they typically last ~60–90 min).
 - On 401, surface a clear "token expired or wrong audience — re-run az command" message with the exact command to copy.
@@ -131,14 +133,16 @@ New visualizations and analyses plug in through registries, not by editing the a
 
 Pin a GA `api-version` for `Microsoft.ApiManagement` in one constant (verify the latest GA version when setting it up). Resources to fetch:
 
-- APIM services in the subscription: `/subscriptions/{sub}/providers/Microsoft.ApiManagement/service`
-- APIs: `.../service/{svc}/apis`
+- Subscriptions the user can access (for the picker): `/subscriptions?api-version=2022-12-01` (Microsoft.Resources, not the APIM api-version)
+- APIM services in the subscription (for the picker): `/subscriptions/{sub}/providers/Microsoft.ApiManagement/service`
+- APIs (for the picker; names and `serviceUrl` only, no per-API calls): `.../service/{svc}/apis`
+- Everything below is fetched for the **selected API** only.
 - Operations: `.../apis/{apiId}/operations`
 - Policies (all `?format=rawxml`):
   - Global: `.../service/{svc}/policies/policy`
   - API: `.../apis/{apiId}/policies/policy`
   - Operation: `.../apis/{apiId}/operations/{opId}/policies/policy`
-- Backends: `.../service/{svc}/backends` — `title`, `description`, `url`, `protocol`, `type` (expected `Single`), `resourceId` (the Azure resource behind it, e.g. App Service, Function App, Container App), `tls` settings, and `credentials` (record only *which* auth mechanism is configured, never values)
+- Backends referenced by the API's policies, one by one: `.../service/{svc}/backends/{backendId}` — `title`, `description`, `url`, `protocol`, `type` (expected `Single`), `resourceId` (the Azure resource behind it, e.g. App Service, Function App, Container App), `tls` settings, and `credentials` (record only *which* auth mechanism is configured, never values)
 - The API's `serviceUrl` property, which is the default backend when no policy overrides it
 - The APIM service's `identity`, especially `userAssignedIdentities` (`clientId` → `principalId`), for outbound managed-identity auth
 - Optionally, `GET {resourceId}` (with the matching provider `api-version`) to show the backend resource's kind, location and hostname; tolerate 403/404 since the user may lack access
@@ -207,7 +211,7 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - TypeScript strict, no `any`; validate external responses with Zod in `services/`.
 - Functional React components and hooks; keep components presentational and logic in hooks/domain.
 - All data loading through TanStack Query with stable query keys (`['arm', sub, svc, 'apis']`, `['graph', 'sp', appId]`, ...).
-- Large tenants: virtualize long lists/tables, lazy-load group members, and let the user scope the analysis to one APIM instance or one API.
+- Large tenants: virtualize long lists/tables, lazy-load group members. The one-API scope (see Project overview) keeps request volume bounded.
 - Errors are shown per resource, not as a global failure — a forbidden Graph call should not block the APIM view.
 - Unit-test the policy parser and mapper heavily using real-world-shaped XML fixtures in `src/test/fixtures/`. No live Azure calls in tests.
 - Never commit real tokens, tenant IDs, subscription IDs, policy XML or exports from a real tenant. Fixtures must be anonymized.
@@ -220,5 +224,5 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
   - **User member** → effective: the role appears in the user's token.
   - **Service principal / managed identity member** → *not* effective: an app calling with its own identity only gets roles assigned directly to its service principal; group membership gives it nothing. Show it greyed out with a short explanation rather than hiding it, since it's usually a misconfiguration.
 - Policy fetches can be numerous (one per operation). Limit concurrency (e.g. 8 in flight) and show progress.
-- A backend entity can exist without any API using it. Show it as unused.
+- Because only one API is analyzed, "unused backend" can't be determined. Don't list all backends or report unused ones.
 - The `__X__` placeholders in the reference policy are filled in at deploy time, so the live policies contain literal values. If a live policy still contains a `{{named value}}`, treat it as unresolved.

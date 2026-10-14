@@ -13,7 +13,11 @@ While data loads, a developer-facing "Matrix-style" request log streams the live
 
 ## 1. Target setup (scope)
 
-The goal is **one company's APIM pattern**, not every possible APIM setup. The reference is `samples-raw/api-policy.xml`, an **API-scope** policy that each API carries:
+The goal is **one company's APIM pattern**, not every possible APIM setup. The reference is `samples-raw/api-policy.xml`, an **API-scope** policy that each API carries.
+
+**Analysis scope: exactly one API.** The user picks subscription → APIM instance → API, and there is no "all APIs" option. Instance-wide calls are limited to filling the pickers (subscriptions, services, API names), the service itself (`identity`) and the global policy.
+
+
 
 | Section | Content | What the app does with it |
 |---|---|---|
@@ -68,7 +72,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - `app/session` store: tokens, sub ID and tenant ID, held in memory only. A unit test asserts nothing reaches `localStorage` or `sessionStorage`.
 
 **M2 — `services/` (raw layer, Zod-validated)**
-- `services/arm`: services (including `identity.userAssignedIdentities` with `clientId`/`principalId`), APIs (including `serviceUrl`), operations, policies at global / API / operation scope (`format=rawxml`, where 404 means "no policy"), backends, and an optional `GET {resourceId}` that tolerates 403/404. Products, fragments and named values are out of scope (§1).
+- `services/arm`: subscriptions (`/subscriptions`, api-version `2022-12-01`), services (including `identity.userAssignedIdentities` with `clientId`/`principalId`), APIs (list for the picker, including `serviceUrl`). For the selected API only: operations, policies at global / API / operation scope (`format=rawxml`, where 404 means "no policy"), each referenced backend via `backends/{backendId}`, and an optional `GET {resourceId}` that tolerates 403/404. Products, fragments and named values are out of scope (§1).
 - `services/graph`:
   - service principal lookups: by appId, by id, by `servicePrincipalNames` filter (used for both the inbound `audience` and the outbound `resource`)
   - `appRoles`, `appRoleAssignedTo` (inbound) and the user-assigned identity's `appRoleAssignments` (outbound)
@@ -89,16 +93,30 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - outbound: `client-id` → user-assigned identity → `appRoleAssignments` on the `resource` service principal
   - SP/MI members of groups are marked `effective: false` with a reason
   - a required role that doesn't exist in the API's `appRoles` is a finding
-  - findings: no auth, parent inbound ignored, no outbound auth, HTTP backend, unused backend entity, APIM identity holding no role on the backend
+  - findings: no auth, parent inbound ignored, no outbound auth, HTTP backend, APIM identity holding no role on the backend
 - `useAccessModel()`: orchestrates the queries and builds the model incrementally, so views render partial data with progress.
 
 **M4 — App shell and session screen**
 - Token paste screen:
-  - two token fields, plus sub ID and tenant ID
+  - two token fields, plus tenant ID (prefilled from the ARM token's `tid`); the subscription is picked in the scope picker
   - decoded claim cards with warnings
   - copyable `az` commands (prefilled with the tenant ID)
   - expiry countdown
-- Scope picker: APIM instance, then an optional single API.
+  - **Safety notice**, shown above the token fields before anything is pasted. Plain language, no fine print:
+    - **Not saved:** tokens are kept in this tab's memory only. Nothing goes to `localStorage`, `sessionStorage`, cookies or the URL. Reloading or closing the tab erases them, and a **"Clear session"** button does the same immediately, wiping tokens and all fetched data.
+    - **Not sent anywhere else:** tokens go only to `management.azure.com` and `graph.microsoft.com`, straight from the browser. There is no backend, no telemetry and no third-party script. The page's Content Security Policy blocks every other destination (see below).
+    - **Read-only app:** the app only sends `GET` requests (plus Graph `$batch`, which only wraps GETs).
+    - **Use a read-only account:** the app being read-only doesn't limit what the token *could* do. An `az` token carries all of the signed-in user's permissions. Prefer an account that only has `Reader` / `API Management Service Reader Role` on the APIM instance plus directory read in Entra, and no write or Owner roles.
+    - **Verify it yourself:** open DevTools › Network and confirm that every request goes to those two hosts.
+  - **Content Security Policy**, applied to the production build: a `<meta>` tag injected at build time, plus `staticwebapp.config.json` › `globalHeaders`. It isn't applied to `pnpm dev`, because Vite's hot reload needs inline scripts and a websocket.
+    - `connect-src` is limited to `'self' https://management.azure.com https://graph.microsoft.com`.
+    - `script-src 'self'`, no external fonts, scripts or images.
+
+    This turns "not sent anywhere else" from a promise into something the browser enforces. A test asserts the header.
+- Scope picker, three required steps:
+  1. **Subscription**: dropdown from `GET /subscriptions` (name + masked ID). No pasting of subscription IDs.
+  2. **APIM instance**: dropdown of services in that subscription.
+  3. **API**: dropdown of that instance's APIs, required. No "all APIs" option; analysis starts only once an API is chosen. Changing the API discards the previous analysis.
 - Layout: nav and landing page generated from the registries; the request log is docked as a collapsible bottom or side panel.
 
 **M5 — Matrix request log (`components/request-log/`)**
