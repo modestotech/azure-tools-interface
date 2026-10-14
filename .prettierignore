@@ -1,0 +1,6 @@
+dist
+coverage
+pnpm-lock.yaml
+public/mockServiceWorker.js
+samples-raw
+*.md

@@ -1,16 +1,18 @@
 {
-    "folders": [
-        {
-            "path": "."
-        }
+  "folders": [
+    {
+      "path": ".",
+    },
+  ],
+  "settings": {
+    "cSpell.words": ["APIM", "elkjs", "MSAL", "rawxml", "xyflow"],
+    "cSpell.ignorePaths": [
+      "pnpm-*",
+      "package-lock.json",
+      "node_modules",
+      ".git",
+      ".vscode",
+      "vscode-extension",
     ],
-    "settings": {
-        "cSpell.words": [
-            "APIM",
-            "elkjs",
-            "MSAL",
-            "rawxml",
-            "xyflow"
-        ]
-    }
+  },
 }

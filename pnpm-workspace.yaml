@@ -1,0 +1,6 @@
+# Only install package versions that have been public for at least 14 days (supply-chain safety).
+minimumReleaseAge: 20160
+
+# msw only refreshes its worker file on postinstall; we generate it explicitly with `msw init`.
+allowBuilds:
+  msw: false
