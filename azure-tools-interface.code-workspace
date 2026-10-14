@@ -3,5 +3,14 @@
         {
             "path": "."
         }
-    ]
+    ],
+    "settings": {
+        "cSpell.words": [
+            "APIM",
+            "elkjs",
+            "MSAL",
+            "rawxml",
+            "xyflow"
+        ]
+    }
 }
