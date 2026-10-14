@@ -1,0 +1,73 @@
+import { http, HttpResponse } from 'msw'
+import { server } from '@/test/msw/server'
+import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
+import { requestLogStore } from '@/lib/http'
+import { clearSession, httpClient } from './httpClient'
+import { sessionStore } from './sessionStore'
+
+describe('session store', () => {
+  afterEach(() => {
+    clearSession()
+    vi.restoreAllMocks()
+  })
+
+  it('keeps tokens and IDs in memory only: no storage, cookies or URL', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const pushState = vi.spyOn(history, 'pushState')
+    const replaceState = vi.spyOn(history, 'replaceState')
+    const arm = armToken()
+    const graph = graphToken()
+
+    const s = sessionStore.getState()
+    s.setToken('arm', arm)
+    s.setToken('graph', graph)
+    s.setTenantId(TEST_TENANT)
+    s.setSubscriptionId(TEST_SUB)
+
+    server.use(http.get('https://management.azure.com/x', () => HttpResponse.json({})))
+    await httpClient.getJson('arm', `https://management.azure.com/x?sub=${TEST_SUB}`)
+
+    expect(setItem).not.toHaveBeenCalled()
+    expect(pushState).not.toHaveBeenCalled()
+    expect(replaceState).not.toHaveBeenCalled()
+    expect(localStorage.length).toBe(0)
+    expect(sessionStorage.length).toBe(0)
+    expect(document.cookie).toBe('')
+    for (const secret of [arm, graph, TEST_TENANT, TEST_SUB]) {
+      expect(window.location.href).not.toContain(secret)
+    }
+    expect(sessionStore.getState()).toMatchObject({ armToken: arm, tenantId: TEST_TENANT })
+  })
+
+  it('goes through the mocked fetch, so tests can never reach real Azure', async () => {
+    sessionStore.getState().setToken('arm', armToken())
+    // No handler: MSW rejects it (kind "network"). Real Azure would answer with an HTTP status instead.
+    await expect(
+      httpClient.getJson('arm', 'https://management.azure.com/unmocked-guard'),
+    ).rejects.toMatchObject({ kind: 'network', status: undefined })
+  })
+
+  it('normalizes pasted tokens', () => {
+    const token = armToken()
+    sessionStore.getState().setToken('arm', `  Bearer ${token}\n`)
+    expect(sessionStore.getState().armToken).toBe(token)
+  })
+
+  it('clearSession wipes tokens, IDs and the request log', async () => {
+    sessionStore.getState().setToken('arm', armToken())
+    sessionStore.getState().setSubscriptionId(TEST_SUB)
+    server.use(http.get('https://management.azure.com/x', () => HttpResponse.json({})))
+    await httpClient.getJson('arm', 'https://management.azure.com/x')
+    expect(requestLogStore.getState().entries).toHaveLength(1)
+
+    clearSession()
+
+    expect(sessionStore.getState()).toMatchObject({
+      armToken: '',
+      graphToken: '',
+      tenantId: '',
+      subscriptionId: '',
+    })
+    expect(requestLogStore.getState().entries).toHaveLength(0)
+  })
+})

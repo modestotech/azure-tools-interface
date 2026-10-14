@@ -1,0 +1,344 @@
+import { z } from 'zod'
+import { API_RESOURCES, decodeJwt, isExpectedAudience, type ApiKind } from '@/lib/token'
+import { ForbiddenError, HttpError, NotFoundError, UnauthorizedError } from './errors'
+import { createLimiter } from './limiter'
+import { maskText, type MaskValues } from './mask'
+import { assertReadOnly, GRAPH_BATCH_MAX, GRAPH_BATCH_URL, type HttpMethod } from './readOnly'
+import type { RequestLogger } from './requestLog'
+
+export interface HttpClientConfig {
+  /** Current token for the API, or undefined when none is entered. Read on every request. */
+  getToken(api: ApiKind): string | undefined
+  /** Current subscription / tenant IDs, used to mask URLs and messages. */
+  getMaskValues(): MaskValues
+  logger: RequestLogger
+  fetch?: typeof fetch
+  /** Requests in flight across both APIs. Default 8. */
+  maxConcurrency?: number
+  /** Retries on 429 / 503. Default 3. */
+  maxRetries?: number
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
+}
+
+export interface RequestOptions {
+  signal?: AbortSignal | undefined
+  /** TanStack Query key the request belongs to, shown (masked) in the log. */
+  queryKey?: readonly unknown[] | undefined
+}
+
+export interface BatchRequest {
+  readonly id: string
+  /** Path relative to `https://graph.microsoft.com/v1.0`, starting with `/`. */
+  readonly url: string
+}
+
+export interface BatchResponse {
+  readonly id: string
+  readonly status: number
+  readonly body: unknown
+}
+
+export interface HttpClient {
+  /** GET one resource; returns parsed JSON. Validate it with Zod in `services/`. */
+  getJson(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown>
+  /** GET a collection, following `nextLink` (ARM) / `@odata.nextLink` (Graph); returns all `value` items. */
+  getAllPages(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown[]>
+  /** Graph `$batch` of GETs, chunked by 20. Sub-requests answering 429 are retried. Order is preserved. */
+  batch(requests: readonly BatchRequest[], options?: RequestOptions): Promise<BatchResponse[]>
+}
+
+const MAX_PAGES = 1000
+const MAX_RETRY_WAIT_MS = 60_000
+
+const pageSchema = z.looseObject({
+  value: z.array(z.unknown()),
+  nextLink: z.string().nullish(),
+  '@odata.nextLink': z.string().nullish(),
+})
+
+const batchResponseSchema = z.object({
+  responses: z.array(
+    z.looseObject({
+      id: z.string(),
+      status: z.number(),
+      headers: z.record(z.string(), z.string()).optional(),
+      body: z.unknown().optional(),
+    }),
+  ),
+})
+
+const errorBodySchema = z.looseObject({
+  error: z.looseObject({ code: z.string().optional(), message: z.string().optional() }),
+})
+
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason as Error)
+      return
+    }
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer)
+        reject(signal.reason as Error)
+      },
+      { once: true },
+    )
+  })
+}
+
+/** Retry-After is either delta-seconds or an HTTP date. */
+export function parseRetryAfter(
+  value: string | null | undefined,
+  now = Date.now(),
+): number | undefined {
+  if (!value) return undefined
+  const seconds = Number(value)
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000)
+  const date = Date.parse(value)
+  return Number.isNaN(date) ? undefined : Math.max(0, date - now)
+}
+
+function backoffMs(attempt: number): number {
+  return Math.min(1000 * 2 ** attempt, MAX_RETRY_WAIT_MS)
+}
+
+function isAbort(error: unknown, signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true || (error instanceof Error && error.name === 'AbortError')
+}
+
+function errorDetail(status: number, statusText: string, text: string): string {
+  try {
+    const parsed = errorBodySchema.safeParse(JSON.parse(text))
+    if (parsed.success) {
+      const { code, message } = parsed.data.error
+      const joined = [code, message].filter(Boolean).join(': ')
+      if (joined) return joined
+    }
+  } catch {
+    // Not JSON; fall through.
+  }
+  return `HTTP ${String(status)}${statusText ? ` ${statusText}` : ''}`
+}
+
+export function createHttpClient(config: HttpClientConfig): HttpClient {
+  // Look fetch up on every call, never capture it: test mocks (MSW) patch globalThis.fetch after modules load.
+  const fetchImpl: typeof fetch = config.fetch ?? ((input, init) => globalThis.fetch(input, init))
+  const sleep = config.sleep ?? defaultSleep
+  const maxRetries = config.maxRetries ?? 3
+  const limiter = createLimiter(config.maxConcurrency ?? 8)
+  const { logger } = config
+
+  const mask = (text: string) => maskText(text, config.getMaskValues())
+
+  /** Rejects a missing token, or one for the wrong API, before any request is sent. */
+  function tokenFor(api: ApiKind): string {
+    const token = config.getToken(api)
+    if (!token) {
+      throw new HttpError('no-token', api, `No ${api.toUpperCase()} token entered.`)
+    }
+    const decoded = decodeJwt(token)
+    if (!decoded.ok || !isExpectedAudience(api, decoded.claims.aud)) {
+      throw new HttpError(
+        'audience-mismatch',
+        api,
+        `The ${api.toUpperCase()} token is not valid for ${API_RESOURCES[api].resource}. Paste a token from the ${api.toUpperCase()} az command.`,
+      )
+    }
+    return token
+  }
+
+  function assertHost(api: ApiKind, url: string): void {
+    let origin: string
+    try {
+      origin = new URL(url).origin
+    } catch {
+      origin = ''
+    }
+    if (origin !== API_RESOURCES[api].origin) {
+      throw new HttpError(
+        'disallowed-host',
+        api,
+        `Blocked request to ${mask(url)}: ${api.toUpperCase()} requests must go to ${API_RESOURCES[api].origin}.`,
+      )
+    }
+  }
+
+  async function send(
+    api: ApiKind,
+    method: HttpMethod,
+    url: string,
+    body: unknown,
+    options: RequestOptions,
+    label?: string,
+  ): Promise<{ json: unknown; headers: Headers }> {
+    assertReadOnly(api, method, url, body)
+    assertHost(api, url)
+    const token = tokenFor(api)
+    const maskedUrl = mask(url)
+
+    const id = logger.start({
+      api,
+      method,
+      url: maskedUrl,
+      rawUrl: url,
+      label,
+      queryKey: options.queryKey ? mask(JSON.stringify(options.queryKey)) : undefined,
+    })
+
+    const fail = (error: HttpError, status?: number, bytes?: number): never => {
+      logger.finish(id, { state: 'error', status, bytes, error: error.message })
+      throw error
+    }
+
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const response = await limiter.run(() =>
+          fetchImpl(url, {
+            method,
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: 'application/json',
+              ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+            },
+            body: body === undefined ? null : JSON.stringify(body),
+            signal: options.signal ?? null,
+          }),
+        )
+
+        const throttled = response.status === 429 || response.status === 503
+        if (throttled && attempt < maxRetries) {
+          const wait = parseRetryAfter(response.headers.get('Retry-After')) ?? backoffMs(attempt)
+          logger.retry(id, response.status)
+          await sleep(Math.min(wait, MAX_RETRY_WAIT_MS), options.signal)
+          continue
+        }
+
+        const text = await response.text()
+        const bytes = new TextEncoder().encode(text).byteLength
+
+        if (!response.ok) {
+          const detail = mask(errorDetail(response.status, response.statusText, text))
+          const { tenantId } = config.getMaskValues()
+          switch (response.status) {
+            case 401:
+              return fail(new UnauthorizedError(api, maskedUrl, tenantId, detail), 401, bytes)
+            case 403:
+              return fail(new ForbiddenError(api, maskedUrl, detail), 403, bytes)
+            case 404:
+              return fail(new NotFoundError(api, maskedUrl, detail), 404, bytes)
+            default:
+              return fail(
+                new HttpError(throttled ? 'throttled' : 'http', api, detail, {
+                  status: response.status,
+                  url: maskedUrl,
+                }),
+                response.status,
+                bytes,
+              )
+          }
+        }
+
+        let json: unknown = null
+        if (text) {
+          try {
+            json = JSON.parse(text)
+          } catch {
+            return fail(
+              new HttpError('invalid-response', api, 'Response was not valid JSON.', {
+                status: response.status,
+                url: maskedUrl,
+              }),
+              response.status,
+              bytes,
+            )
+          }
+        }
+        logger.finish(id, { state: 'ok', status: response.status, bytes })
+        return { json, headers: response.headers }
+      }
+    } catch (error) {
+      if (error instanceof HttpError) throw error
+      if (isAbort(error, options.signal)) {
+        logger.finish(id, { state: 'cancelled' })
+        throw error
+      }
+      // fetch() rejects with a TypeError on network failures, including CORS blocks.
+      return fail(
+        new HttpError(
+          'network',
+          api,
+          `Network error calling ${maskedUrl}. Check the connection; if it persists, the call may be blocked by CORS.`,
+          { url: maskedUrl },
+        ),
+      )
+    }
+  }
+
+  async function getJson(api: ApiKind, url: string, options: RequestOptions = {}) {
+    return (await send(api, 'GET', url, undefined, options)).json
+  }
+
+  async function getAllPages(api: ApiKind, url: string, options: RequestOptions = {}) {
+    const items: unknown[] = []
+    let next: string | null | undefined = url
+    for (let page = 0; next; page++) {
+      if (page >= MAX_PAGES) {
+        throw new HttpError('invalid-response', api, `Stopped after ${String(MAX_PAGES)} pages.`)
+      }
+      const json = await getJson(api, next, options)
+      const parsed = pageSchema.safeParse(json)
+      if (!parsed.success) {
+        throw new HttpError('invalid-response', api, `Expected a collection from ${mask(next)}.`)
+      }
+      items.push(...parsed.data.value)
+      next = parsed.data.nextLink ?? parsed.data['@odata.nextLink']
+    }
+    return items
+  }
+
+  async function batchChunk(
+    chunk: readonly BatchRequest[],
+    options: RequestOptions,
+  ): Promise<BatchResponse[]> {
+    const results = new Map<string, BatchResponse>()
+    let pending = chunk
+    for (let attempt = 0; pending.length > 0; attempt++) {
+      const body = { requests: pending.map((r) => ({ id: r.id, method: 'GET', url: r.url })) }
+      const label = `$batch ×${String(pending.length)}`
+      const { json } = await send('graph', 'POST', GRAPH_BATCH_URL, body, options, label)
+      const parsed = batchResponseSchema.safeParse(json)
+      if (!parsed.success) {
+        throw new HttpError('invalid-response', 'graph', 'Unexpected $batch response shape.')
+      }
+      let wait = 0
+      const retry: BatchRequest[] = []
+      for (const r of parsed.data.responses) {
+        const request = pending.find((p) => p.id === r.id)
+        if (!request) continue
+        if (r.status === 429 && attempt < maxRetries) {
+          retry.push(request)
+          wait = Math.max(wait, parseRetryAfter(r.headers?.['Retry-After']) ?? backoffMs(attempt))
+        } else {
+          results.set(r.id, { id: r.id, status: r.status, body: r.body })
+        }
+      }
+      pending = retry
+      if (pending.length > 0) await sleep(Math.min(wait, MAX_RETRY_WAIT_MS), options.signal)
+    }
+    return chunk.flatMap((r) => results.get(r.id) ?? [])
+  }
+
+  async function batch(requests: readonly BatchRequest[], options: RequestOptions = {}) {
+    const chunks: BatchRequest[][] = []
+    for (let i = 0; i < requests.length; i += GRAPH_BATCH_MAX) {
+      chunks.push(requests.slice(i, i + GRAPH_BATCH_MAX))
+    }
+    const results = await Promise.all(chunks.map((c) => batchChunk(c, options)))
+    return results.flat()
+  }
+
+  return { getJson, getAllPages, batch }
+}
