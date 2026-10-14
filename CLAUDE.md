@@ -12,7 +12,19 @@ A client-side SPA that maps **Azure API Management (APIM) policies** to **Micros
 
 The results are shown as interactive visualizations (graph + tables). More visualizations and "scripts" (read-only analyses) will be added later, so the architecture must make adding new ones cheap.
 
+The interface should be focused on developers, and should be showing the requests being made in a Matrix style log. This should happen while the requests to construct the visualizations are being made. 
+
 There is **no backend**. The browser calls Azure Resource Manager and Microsoft Graph directly.
+
+## Development restrictions
+
+### Azure access
+
+You will not get access to any token while developing this, so in the plan, tell me which samples etc. that I need to feed you, if you can't find what you need online.
+
+### Git
+
+Don't commit any code before consulting me.
 
 ## Authentication model
 
