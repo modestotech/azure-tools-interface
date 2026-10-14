@@ -10,6 +10,8 @@ A client-side SPA that maps **Azure API Management (APIM) policies** to **Micros
 - If access is granted through a group, who is in that group (direct members only — nested groups are not expanded)
 - Which backend each operation routes to: backend type, URL, the Azure resource behind it, and how APIM authenticates to it (including APIM's own managed identity and what it has access to)
 
+**Scope:** the app targets one company's APIM pattern, not every possible APIM setup. `PROJECT_PLAN.md` §1 describes it, and the reference policy is `samples-raw/api-policy.xml` (an anonymized copy will live in `src/test/fixtures/`). Anything outside the pattern is flagged for manual review, not supported.
+
 The results are shown as interactive visualizations (graph + tables). More visualizations and "scripts" (read-only analyses) will be added later, so the architecture must make adding new ones cheap.
 
 The interface should be focused on developers, and should be showing the requests being made in a Matrix style log. This should happen while the requests to construct the visualizations are being made.
@@ -124,27 +126,24 @@ Pin a GA `api-version` for `Microsoft.ApiManagement` in one constant (verify the
 - APIM services in the subscription: `/subscriptions/{sub}/providers/Microsoft.ApiManagement/service`
 - APIs: `.../service/{svc}/apis`
 - Operations: `.../apis/{apiId}/operations`
-- Policies at every scope (all `?format=rawxml`):
+- Policies (all `?format=rawxml`):
   - Global: `.../service/{svc}/policies/policy`
-  - Product: `.../products/{productId}/policies/policy` (plus `.../products/{productId}/apis` to link products to APIs)
   - API: `.../apis/{apiId}/policies/policy`
   - Operation: `.../apis/{apiId}/operations/{opId}/policies/policy`
-- Policy fragments: `.../policyFragments` (resolve `<include-fragment>`)
-- Named values: `.../namedValues` (resolve `{{named-value}}` references; never display values marked `secret`)
-- Backends: `.../service/{svc}/backends` — `title`, `description`, `url`, `protocol` (`http` / `soap`), `type` (`Single` / `Pool`), `pool.services` (member backends with priority/weight), `circuitBreaker`, `resourceId` (the Azure resource behind it, e.g. App Service, Function App, Logic App, Container App), `tls` settings, and `credentials` (record only *which* auth mechanism is configured — certificate thumbprints, header/query names — never values)
+- Backends: `.../service/{svc}/backends` — `title`, `description`, `url`, `protocol`, `type` (expected `Single`), `resourceId` (the Azure resource behind it, e.g. App Service, Function App, Container App), `tls` settings, and `credentials` (record only *which* auth mechanism is configured, never values)
 - The API's `serviceUrl` property, which is the default backend when no policy overrides it
-- The APIM service's `identity` (system-assigned `principalId`, user-assigned identities) for outbound managed-identity auth
+- The APIM service's `identity`, especially `userAssignedIdentities` (`clientId` → `principalId`), for outbound managed-identity auth
 - Optionally, `GET {resourceId}` (with the matching provider `api-version`) to show the backend resource's kind, location and hostname; tolerate 403/404 since the user may lack access
 
 A 404 on a policy endpoint means "no policy at that scope" — not an error.
 
 ### Entra (Microsoft Graph, `https://graph.microsoft.com/v1.0`)
 
-- Service principal by appId: `/servicePrincipals(appId='{appId}')`
-- The API's own service principal and its app roles: `appRoles` on the backend/API service principal
+- The API's service principal, found from the `validate-jwt` audience: a GUID audience → `/servicePrincipals(appId='{appId}')`; an `api://…` or other URI → `/servicePrincipals?$filter=servicePrincipalNames/any(x:x eq '{audience}')`
+- Its app roles: `appRoles` on that service principal
 - Who holds app roles on the API: `/servicePrincipals/{id}/appRoleAssignedTo`
 - Group details and direct members only: `/groups/{id}`, `/groups/{id}/members`. Do not fetch `transitiveMembers` and do not expand nested groups — members of nested groups don't receive app roles assigned to the parent group.
-- APIM's managed identity as a service principal: `/servicePrincipals/{principalId}` and its outbound permissions via `/servicePrincipals/{principalId}/appRoleAssignments`
+- APIM's user-assigned managed identity as a service principal: `/servicePrincipals/{principalId}` and its outbound permissions via `/servicePrincipals/{principalId}/appRoleAssignments`
 - Target of `authentication-managed-identity`: resolve the `resource` audience to a service principal with `/servicePrincipals?$filter=servicePrincipalNames/any(x:x eq '{resource}')`
 - Use `$select` to keep payloads small, `$batch` (max 20 requests per batch) for bulk lookups, follow `@odata.nextLink`, and honor `Retry-After` on 429.
 
@@ -152,46 +151,47 @@ A 404 on a policy endpoint means "no policy at that scope" — not an error.
 
 The parser turns effective policy XML into `AccessRule`s. Key behaviors:
 
-- Compute the **effective policy per operation** by applying `<base />` inheritance: global → product → API → operation. Each rule keeps its source scope so the UI can show where it came from.
-- Expand `<include-fragment fragment-id="..."/>` and resolve `{{named values}}` before analysis.
-- Extract access constraints from:
-  - `<validate-azure-ad-token>`: `tenant-id`, `<client-application-ids>`, `<audiences>`, `<required-claims>`
-  - `<validate-jwt>`: `<openid-config>` / issuer, `<audiences>`, `<required-claims>` (especially `roles`, `scp`, `appid`, `azp`)
-  - `<check-header>` and other recognizable allow-lists of client IDs
+- Compute the **effective policy per operation and per section** (`inbound`, `backend`, `outbound`, `on-error`) by applying `<base />` inheritance: global → API → operation. A section without `<base />` drops the parent's section. Record that, and flag it as "parent inbound ignored" when it happens in `inbound` (the reference policy does this). Each rule keeps its source scope so the UI can show where it came from.
+- Supported elements (the target pattern):
+  - `<validate-jwt>`: `<openid-config>`, `<issuers>`, `<audiences>`, `<required-claims>` with `roles` (`match="any"` or `"all"`)
+  - `<set-backend-service backend-id="..."/>`
+  - `<authentication-managed-identity resource="..." client-id="..."/>`
 - Map constraints to Entra:
-  - Explicit client/app IDs → service principals
-  - Required `roles` claim values → app roles on the API's service principal → `appRoleAssignedTo` → service principals, users and groups → group members
-- Anything not understood (C# expressions `@(...)`, `<choose>` branches, custom logic) must be kept as an `UnresolvedRule` with the raw XML snippet and shown in the UI as "needs manual review". Never silently drop it or guess.
+  - Audience → the API's service principal
+  - Required `roles` values → app roles on it → `appRoleAssignedTo` → service principals, users and groups → direct group members
+  - A required role that doesn't exist in the API's `appRoles` is a finding
+- Classify every element in `inbound` and `backend`:
+  - **Supported** → a rule.
+  - **Response-only** (`set-header` other than `Authorization`, `rate-limit*`, `quota*`, `cors`, `<base />`) → ignored.
+  - **Anything else** → an `UnresolvedRule` with the raw XML snippet, shown in the UI as "needs manual review". This includes `<choose>`, `<include-fragment>`, `{{named values}}`, `validate-azure-ad-token`, `send-request`, `set-backend-service base-url` and `@(...)` expressions in access or routing attributes. Never silently drop it or guess.
+- `outbound` and `on-error` don't affect access or routing and are not analyzed. Their `@(...)` expressions must not produce `UnresolvedRule`s.
 - Operations with no authentication policy at any scope are flagged explicitly.
 
 ### Backend resolution
 
-For each operation, determine the effective backend (inbound policy order matters; the last `set-backend-service` that runs wins):
+- `<set-backend-service backend-id="..."/>` → link to the backend entity. If more than one runs, the last one in `inbound` wins.
+- No `set-backend-service` at any scope → the API's `serviceUrl`.
 
-- `<set-backend-service backend-id="..."/>` → link to the backend entity (expand `Pool` backends to their members)
-- `<set-backend-service base-url="..."/>` → an ad-hoc URL backend with no backend entity
-- No `set-backend-service` at any scope → the API's `serviceUrl`
-- `set-backend-service` inside `<choose>` or using expressions → record **all candidate backends** with `conditional: true` and the condition snippet; don't pick one
-- Also capture `<send-request>` and `<forward-request>` settings as secondary/outbound calls, labeled separately from the main backend
+Outbound authentication:
 
-Outbound authentication to the backend, from backend `credentials` and policies:
-
-- `<authentication-managed-identity resource="..." client-id="..."/>` → APIM's system- or user-assigned identity calling the `resource` audience; link to the target service principal and to the app roles APIM's identity holds on it
-- `<authentication-certificate>`, `<authentication-basic>`, `set-header name="Authorization"` / `Ocp-Apim-Subscription-Key`, backend credential headers/query → record the mechanism and the named-value *name* only
-- Flag backends with no outbound auth, and HTTP (non-TLS) URLs, as findings
+- `<authentication-managed-identity resource="..." client-id="..."/>`:
+  1. Match `client-id` to the APIM service's `identity.userAssignedIdentities[*].clientId` to get its `principalId`.
+  2. Resolve `resource` to the target service principal.
+  3. Show the app roles that identity holds on the target, from `appRoleAssignments` filtered to the target.
+- Flag these as findings: backends with no outbound auth, HTTP (non-TLS) URLs, and an APIM identity that holds no role on the target.
 
 ## Domain model (normalized)
 
 Core types live in `domain/model.ts`. Keep them stable — views and scripts depend on them.
 
-- `ApimService`, `Api`, `Operation`, `Product`
+- `ApimService`, `Api`, `Operation`
 - `PolicyDocument` (scope, raw XML, parsed tree)
 - `AccessRule` (operation, source scope, kind, constraint values) and `UnresolvedRule`
 - `Principal` — discriminated union: `ServicePrincipal` | `User` | `Group` | `ManagedIdentity`
 - `AppRole`, `AppRoleAssignment`, `GroupMembership`
-- `Backend` — `id`, `title`, `url`, `protocol`, `type` (`Single` | `Pool` | `AdHocUrl` | `ApiServiceUrl`), pool members, circuit breaker, `resourceId`, resolved resource info
-- `BackendBinding` — operation → backend, source scope, `conditional`, condition snippet
-- `OutboundAuth` — mechanism (`ManagedIdentity` | `Certificate` | `Basic` | `Header` | `Query` | `None`), identity used, target audience / service principal
+- `Backend` — `id`, `title`, `url`, `protocol`, `type` (`Single` | `ApiServiceUrl`), `resourceId`, resolved resource info
+- `BackendBinding` — operation → backend, source scope
+- `OutboundAuth` — mechanism (`ManagedIdentity` | `None`), identity used (user-assigned `clientId` / `principalId`), target audience / service principal, app roles held
 - `AccessEdge` — the graph edge set the visualizations render (`principal/group member → operation → backend → backend resource`, with rules and outbound auth as edge/node details)
 
 ## Conventions
@@ -212,5 +212,5 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
   - **User member** → effective: the role appears in the user's token.
   - **Service principal / managed identity member** → *not* effective: an app calling with its own identity only gets roles assigned directly to its service principal; group membership gives it nothing. Show it greyed out with a short explanation rather than hiding it, since it's usually a misconfiguration.
 - Policy fetches can be numerous (one per operation). Limit concurrency (e.g. 8 in flight) and show progress.
-- Backend `url` and `set-backend-service base-url` often contain `{{named values}}`; resolve them, but if the named value is a secret or Key Vault reference, show the reference name instead of the value.
-- A backend entity can exist without any API using it, and an API can route to a URL with no backend entity — show both cases.
+- A backend entity can exist without any API using it. Show it as unused.
+- The `__X__` placeholders in the reference policy are filled in at deploy time, so the live policies contain literal values. If a live policy still contains a `{{named value}}`, treat it as unresolved.

@@ -9,11 +9,40 @@
 - the Entra principals that can call it, and
 - the backend it routes to, including how APIM authenticates outbound.
 
-While data loads, a developer-facing "Matrix-style" request log streams the live ARM/Graph traffic. I have no Azure access, so I build everything against fixtures and MSW. Real anonymized samples from you are the input that most affects quality (see §6).
+While data loads, a developer-facing "Matrix-style" request log streams the live ARM/Graph traffic. I have no Azure access, so I build everything against fixtures and MSW.
 
-## 1. Spec issues
+## 1. Target setup (scope)
 
-All resolved in CLAUDE.md (direct group members only, masked request log, concurrency bullet).
+The goal is **one company's APIM pattern**, not every possible APIM setup. The reference is `samples-raw/api-policy.xml`, an **API-scope** policy that each API carries:
+
+| Section | Content | What the app does with it |
+|---|---|---|
+| `inbound` | **No `<base/>`**, so global and product inbound policies are *not* inherited | Show "parent inbound ignored" on the API |
+| `inbound` | `validate-jwt`: `openid-config` (v2), one `audience`, v1 + v2 `issuers`, `required-claims` `roles` `match="any"` | Inbound access rule |
+| `inbound` | `set-backend-service backend-id="…"` | Link to the backend entity |
+| `inbound` | `authentication-managed-identity resource="…" client-id="…"` | Outbound auth through a **user-assigned** identity |
+| `backend` / `outbound` / `on-error` | `<base/>`, header cleanup, `Request-Id` echo, JSON error body (with `@(...)` expressions) | Not access-related: ignored, not flagged |
+
+**How the joins work in this pattern**
+
+- **Inbound (who can call):**
+  1. Find the API's service principal from `audience`. A GUID is looked up as an `appId`; `api://…` or another URI is looked up with the `servicePrincipalNames` filter.
+  2. Required `roles` values → `appRoles` on that service principal.
+  3. `appRoleAssignedTo` → users, service principals and groups, then each group's direct members.
+  4. `match="any"`: holding **one** listed role is enough.
+- **Outbound (what APIM calls with):**
+  1. `client-id` → the user-assigned identity in the APIM service's `identity.userAssignedIdentities` whose `clientId` matches → its `principalId`.
+  2. `resource` → the target service principal, via the `servicePrincipalNames` filter.
+  3. That identity's `appRoleAssignments`, filtered to the target service principal → the app roles APIM holds on the backend.
+- **Backend:** `backend-id` → the backend entity, its `url` and `resourceId`, plus an optional `GET {resourceId}`.
+
+**Out of scope for now:** `validate-azure-ad-token`, `check-header`, `include-fragment`, named-value resolution, `choose`, `send-request`, `set-backend-service base-url`, Pool backends and product-scope policies. The parser doesn't support them. Any of them found in `inbound` or `backend` becomes an `UnresolvedRule` ("needs manual review") so the app never stays silent. Elements that only affect responses (`set-header` other than `Authorization`, `rate-limit*`, `quota*`, `cors`, plus everything in `outbound` and `on-error`) are ignored.
+
+**Assumptions (correct me if wrong):**
+1. The `__X__` placeholders are filled in at deploy time, so the live policies contain literal values (no `{{named values}}`).
+2. Operations usually have no policy of their own. If one does, it is composed generically: `<base/>` pulls in the API policy.
+3. A global policy may exist. It's fetched (one call), but its `inbound` only applies to an API whose inbound includes `<base/>`.
+4. Backends are `Single`.
 
 ## 2. Milestones (each one ends green on `pnpm typecheck && pnpm lint && pnpm test`)
 
@@ -39,10 +68,10 @@ All resolved in CLAUDE.md (direct group members only, masked request log, concur
 - `app/session` store: tokens, sub ID and tenant ID, held in memory only. A unit test asserts nothing reaches `localStorage` or `sessionStorage`.
 
 **M2 — `services/` (raw layer, Zod-validated)**
-- `services/arm`: services (including `identity`), APIs (including `serviceUrl`), operations, products, product→API links, policies at 4 scopes (`format=rawxml`, where 404 means "no policy"), policy fragments, named values (secret values never read), backends, and an optional `GET {resourceId}` that tolerates 403/404.
+- `services/arm`: services (including `identity.userAssignedIdentities` with `clientId`/`principalId`), APIs (including `serviceUrl`), operations, policies at global / API / operation scope (`format=rawxml`, where 404 means "no policy"), backends, and an optional `GET {resourceId}` that tolerates 403/404. Products, fragments and named values are out of scope (§1).
 - `services/graph`:
-  - service principal lookups: by appId, by id, by `servicePrincipalNames` filter
-  - `appRoles`, `appRoleAssignedTo` and `appRoleAssignments`
+  - service principal lookups: by appId, by id, by `servicePrincipalNames` filter (used for both the inbound `audience` and the outbound `resource`)
+  - `appRoles`, `appRoleAssignedTo` (inbound) and the user-assigned identity's `appRoleAssignments` (outbound)
   - groups and their *direct* members, with group-type members filtered out
   - a `$batch` helper that chunks requests into groups of 20
 - Each call gets a TanStack Query hook with stable keys (`['arm', sub, svc, 'apis']`, `['graph','sp',appId]`, …).
@@ -52,16 +81,15 @@ All resolved in CLAUDE.md (direct group members only, masked request log, concur
 - `model.ts`: the types listed in CLAUDE.md, as discriminated unions.
 - `policy-parser/`:
   - fast-xml-parser configured to *preserve order* (needed for `<base/>` placement and "last `set-backend-service` wins")
-  - fragment expansion
-  - named-value resolution (secret / Key Vault values become a reference name)
-  - effective-policy composition: global → product → API → operation
-  - extractors for `validate-azure-ad-token`, `validate-jwt` and `check-header`
-  - backend and outbound-auth extractors, plus `send-request` / `forward-request`
-  - `UnresolvedRule` for `@(...)`, `<choose>` and anything unrecognised; `conditional: true` for candidate backends
+  - effective-policy composition per section: global → API → operation. A missing `<base/>` drops the parent's section, and that gets recorded.
+  - extractors (§1 pattern): `validate-jwt`, `set-backend-service backend-id`, `authentication-managed-identity`
+  - classifying `inbound` / `backend` elements: handled, ignorable (response-only), or `UnresolvedRule` (anything else, including `@(...)` in an access/routing attribute)
 - `mapper/`: joins rules with Entra data into `AccessEdge[]`.
-  - roles → appRoles → `appRoleAssignedTo` → principals → direct group members
+  - inbound: audience → API service principal → roles → `appRoleAssignedTo` → principals → direct group members
+  - outbound: `client-id` → user-assigned identity → `appRoleAssignments` on the `resource` service principal
   - SP/MI members of groups are marked `effective: false` with a reason
-  - findings: no auth, no outbound auth, HTTP backend, unused backend entity, URL with no backend entity
+  - a required role that doesn't exist in the API's `appRoles` is a finding
+  - findings: no auth, parent inbound ignored, no outbound auth, HTTP backend, unused backend entity, APIM identity holding no role on the backend
 - `useAccessModel()`: orchestrates the queries and builds the model incrementally, so views render partial data with progress.
 
 **M4 — App shell and session screen**
@@ -87,7 +115,7 @@ All resolved in CLAUDE.md (direct group members only, masked request log, concur
   - CSV/JSON export
 - `access-graph`: React Flow + elkjs, layered left to right: principal / member → operation → backend → resource. Node details show rules and outbound auth; ineffective edges are greyed out; group members lazy-load.
 - `principal-explorer`: pick a principal and see the operations it can reach, and why.
-- `backends`: backend entities and ad-hoc URLs, pool members, circuit breaker, TLS, the credential *mechanism* only, the resolved resource, and APIM MI permissions.
+- `backends`: backend entities, URL, TLS, the credential *mechanism* only, the resolved resource, and the roles APIM's user-assigned identity holds on it.
 - One small ECharts summary on the landing page (auth coverage, findings by type).
 
 **M7 — Scripts (`scripts/registry.ts`) and a generic result renderer**
@@ -111,47 +139,33 @@ Starter scripts:
 
 ## 4. Critical files (to create)
 
-`src/lib/http/request.ts`, `src/lib/http/requestLog.ts`, `src/lib/token/jwt.ts`, `src/services/arm/*.ts`, `src/services/graph/*.ts`, `src/domain/model.ts`, `src/domain/policy-parser/{compose,extract,backend,resolve}.ts`, `src/domain/mapper/buildAccessModel.ts`, `src/views/registry.ts`, `src/scripts/registry.ts`, `src/components/request-log/RequestLog.tsx`, `src/test/fixtures/**`, `src/test/msw/handlers.ts`.
+`src/lib/http/request.ts`, `src/lib/http/requestLog.ts`, `src/lib/token/jwt.ts`, `src/services/arm/*.ts`, `src/services/graph/*.ts`, `src/domain/model.ts`, `src/domain/policy-parser/{compose,extract,classify}.ts`, `src/domain/mapper/buildAccessModel.ts`, `src/views/registry.ts`, `src/scripts/registry.ts`, `src/components/request-log/RequestLog.tsx`, `src/test/fixtures/**`, `src/test/msw/handlers.ts`.
 
 ## 5. Verification
 
 - `pnpm typecheck && pnpm lint && pnpm test` at every milestone.
 - Parser and mapper fixture tests cover:
-  - inheritance with and without `<base/>`
-  - fragments and named values
-  - choose/expressions producing unresolved and conditional results
-  - every outbound auth mechanism
-  - group members that are SP/MI vs. users
+  - the reference policy (`src/test/fixtures/policies/api-policy.xml`, anonymized from `samples-raw/`), which gives exactly one jwt rule, one backend binding and one MI outbound auth, with no unresolved rules (outbound/on-error expressions ignored)
+  - inbound without `<base/>` (parent ignored) vs. with `<base/>` (global merged)
+  - an operation-level policy layered on the API policy
+  - a variant with an out-of-scope element (e.g. `<choose>`) in inbound, which gives an `UnresolvedRule`
+  - audience as a GUID vs. `api://…`
+  - group members that are SP/MI vs. users; a required role missing from `appRoles`
 - `pnpm dev` in MSW demo mode: the full flow renders and the log streams.
 - `pnpm build`, then `pnpm preview`: deep links work through the fallback.
 - **Live smoke test, run by you**: paste real tokens against a test APIM and report anything wrong. I never see the tokens.
 
 ## 6. What I need from you (anonymized, never committed raw)
 
-Public docs cover the response *shapes* well, so I start from doc-based fixtures. Real samples matter most for **policy XML variety**, so that's where I'd ask for help.
+**Done — policy XML.** `samples-raw/api-policy.xml` defines the target pattern (§1). No more policy samples are needed.
 
-**Priority A — policy XML (biggest unknown)**
-- 5–15 real policies across scopes: global, product, API, operation.
-- Ideally include: `validate-azure-ad-token`, `validate-jwt` with `roles`/`scp` claims, `include-fragment`, `{{named values}}`, `choose`, `set-backend-service` (backend-id and base-url), `authentication-managed-identity`, `send-request`.
-- Plus 1–2 policy fragments.
-- Capture with: `az rest --method get --url "https://management.azure.com/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<svc>/apis/<api>/policies/policy?format=rawxml&api-version=<API_VERSION>"` (use the version pinned in M0)
+**Not needed up front — ARM/Graph JSON.** Public docs cover the response shapes, so fixtures are built from them. Real samples are only requested if the live smoke test shows a shape mismatch.
 
-**Priority B — one ARM JSON sample each** (anonymize GUIDs, hostnames, names):
-- service list (with `identity`)
-- `backends` (one Single, one Pool, one with `credentials`)
-- `namedValues` (one secret, one Key Vault)
-- `apis` (with `serviceUrl`)
-
-**Priority C — one Graph JSON sample each**:
-- an API service principal with `appRoles`
-- its `appRoleAssignedTo` (mixing user, group and SP)
-- `/groups/{id}/members` (mixing user, SP and group)
-- capture with `az rest --resource https://graph.microsoft.com --url ...`
-
-**Priority D — browser checks** (later, at M8):
+**Later, at M8 — live checks:**
+- Confirm the §1 assumptions against the live APIM.
 - From the dev server, confirm whether ARM, Graph and Graph `$batch` calls pass CORS with a pasted token.
 - One real 401 and one real 403 response body.
 
-**Where to put them**: drop raw files in `samples-raw/` (gitignored). I write anonymized copies to `src/test/fixtures/`; only those get committed.
+**Where to put any further samples**: drop raw files in `samples-raw/` (gitignored). I write anonymized copies to `src/test/fixtures/`; only those get committed.
 
 **Anonymizing**: replace GUIDs with `00000000-0000-0000-0000-00000000000N`, tenant and company names with `contoso`, and hosts with `*.example.net`. Keep the structure and attribute names untouched.
