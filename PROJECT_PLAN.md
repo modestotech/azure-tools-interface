@@ -4,18 +4,16 @@
 
 ## Context
 
-The repo has nothing in it yet except `CLAUDE.md`. That file is the spec for a static, backend-less React SPA. You paste an ARM token and a Graph token, and the app maps every APIM operation to:
+`CLAUDE.md` is the spec for a static, backend-less React SPA. You paste an ARM token and a Graph token, and the app maps every APIM operation to:
 - the policies that protect it,
 - the Entra principals that can call it, and
 - the backend it routes to, including how APIM authenticates outbound.
 
 While data loads, a developer-facing "Matrix-style" request log streams the live ARM/Graph traffic. I have no Azure access, so I build everything against fixtures and MSW. Real anonymized samples from you are the input that most affects quality (see §6).
 
-## 1. Spec issues to resolve first (small CLAUDE.md edits, with your OK)
+## 1. Spec issues
 
-1. **Line 10** says "who is in that group (*transitive* membership)". Lines 143 and 208 say *direct members only, no nesting*. I'll follow direct-only and fix line 10.
-2. **Line 210**: the concurrency bullet ("Policy fetches can be numerous…") is glued onto the end of the previous bullet. It needs a newline.
-3. **"Never write sub/tenant IDs to logs"** vs. the request log, which shows URLs that contain the subscription ID. Proposal: the log masks the sub and tenant IDs as `{sub}` / `{tid}` by default, with an in-memory "reveal" toggle. Tokens are never shown.
+All resolved in CLAUDE.md (direct group members only, masked request log, concurrency bullet).
 
 ## 2. Milestones (each one ends green on `pnpm typecheck && pnpm lint && pnpm test`)
 
@@ -136,7 +134,7 @@ Public docs cover the response *shapes* well, so I start from doc-based fixtures
 - 5–15 real policies across scopes: global, product, API, operation.
 - Ideally include: `validate-azure-ad-token`, `validate-jwt` with `roles`/`scp` claims, `include-fragment`, `{{named values}}`, `choose`, `set-backend-service` (backend-id and base-url), `authentication-managed-identity`, `send-request`.
 - Plus 1–2 policy fragments.
-- Capture with: `az rest --method get --url "https://management.azure.com/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<svc>/apis/<api>/policies/policy?format=rawxml&api-version=2024-05-01"`
+- Capture with: `az rest --method get --url "https://management.azure.com/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<svc>/apis/<api>/policies/policy?format=rawxml&api-version=<API_VERSION>"` (use the version pinned in M0)
 
 **Priority B — one ARM JSON sample each** (anonymize GUIDs, hostnames, names):
 - service list (with `identity`)
@@ -153,5 +151,7 @@ Public docs cover the response *shapes* well, so I start from doc-based fixtures
 **Priority D — browser checks** (later, at M8):
 - From the dev server, confirm whether ARM, Graph and Graph `$batch` calls pass CORS with a pasted token.
 - One real 401 and one real 403 response body.
+
+**Where to put them**: drop raw files in `samples-raw/` (gitignored). I write anonymized copies to `src/test/fixtures/`; only those get committed.
 
 **Anonymizing**: replace GUIDs with `00000000-0000-0000-0000-00000000000N`, tenant and company names with `contoso`, and hosts with `*.example.net`. Keep the structure and attribute names untouched.

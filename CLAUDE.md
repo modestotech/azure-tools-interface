@@ -2,7 +2,7 @@
 
 ## Project overview
 
-A client-side SPA that maps **Azure API Management (APIM) policies** to **Microsoft Entra ID identities**. Given an access token, a subscription and a tenant, it answers:
+A client-side SPA that maps **Azure API Management (APIM) policies** to **Microsoft Entra ID identities**. Given two access tokens (ARM and Graph), a subscription and a tenant, it answers:
 
 - Which APIs and operations exist in an APIM instance, and which policies protect them
 - Which service principals (apps / managed identities) are allowed to call each operation
@@ -12,7 +12,7 @@ A client-side SPA that maps **Azure API Management (APIM) policies** to **Micros
 
 The results are shown as interactive visualizations (graph + tables). More visualizations and "scripts" (read-only analyses) will be added later, so the architecture must make adding new ones cheap.
 
-The interface should be focused on developers, and should be showing the requests being made in a Matrix style log. This should happen while the requests to construct the visualizations are being made. 
+The interface should be focused on developers, and should be showing the requests being made in a Matrix style log. This should happen while the requests to construct the visualizations are being made.
 
 There is **no backend**. The browser calls Azure Resource Manager and Microsoft Graph directly.
 
@@ -20,7 +20,9 @@ There is **no backend**. The browser calls Azure Resource Manager and Microsoft 
 
 ### Azure access
 
-You will not get access to any token while developing this, so in the plan, tell me which samples etc. that I need to feed you, if you can't find what you need online.
+You will not get access to any token while developing this. The samples needed from me are listed in `PROJECT_PLAN.md` §6; ask for more if something can't be found online.
+
+Raw samples go in `samples-raw/` (gitignored except its README). Read them from there and write anonymized copies to `src/test/fixtures/`. Never copy raw samples anywhere else in the repo.
 
 ### Git
 
@@ -54,7 +56,7 @@ Required permissions for the signed-in user: `Reader` (or `API Management Servic
 - **Vite + React + TypeScript** (strict mode)
 - **TanStack Query** for fetching, caching, retries and pagination
 - **Zustand** for app state (session/tokens, selections, filters)
-- **React Flow (@xyflow/react)** + **elkjs** for the access graph (operations → policies → service principals → groups → members)
+- **React Flow (@xyflow/react)** + **elkjs** for the access graph (see `AccessEdge` below)
 - **Apache ECharts** (via `echarts-for-react`) for charts/summaries
 - **TanStack Table** for tabular views and exports (CSV/JSON)
 - **Tailwind CSS** + **shadcn/ui** for UI components
