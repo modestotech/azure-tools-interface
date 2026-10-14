@@ -7,7 +7,7 @@ A client-side SPA that maps **Azure API Management (APIM) policies** to **Micros
 - Which APIs and operations exist in an APIM instance, and which policies protect them
 - Which service principals (apps / managed identities) are allowed to call each operation
 - Who those service principals are (display name, appId, owners, type)
-- If access is granted through a group, who is in that group (transitive membership)
+- If access is granted through a group, who is in that group (direct members only — nested groups are not expanded)
 - Which backend each operation routes to: backend type, URL, the Azure resource behind it, and how APIM authenticates to it (including APIM's own managed identity and what it has access to)
 
 The results are shown as interactive visualizations (graph + tables). More visualizations and "scripts" (read-only analyses) will be added later, so the architecture must make adding new ones cheap.
@@ -42,6 +42,7 @@ az account get-access-token --resource https://graph.microsoft.com --tenant <TEN
 
 Rules:
 - Tokens, subscription ID and tenant ID are held **in memory only** (React state / store). Never write them to `localStorage`, `sessionStorage`, cookies, URLs, logs or error messages.
+- The on-screen request log shows URLs with the subscription ID and tenant ID masked as `{sub}` / `{tid}` by default. An in-memory "reveal" toggle may unmask them. Tokens are never shown, and log exports are always masked.
 - Decode the JWT (no validation needed) to show `aud`, `tid`, `upn`/`oid` and `exp`. Warn if `aud` doesn't match the expected resource, if `tid` doesn't match the entered tenant, or if the token expires soon (they typically last ~60–90 min).
 - On 401, surface a clear "token expired or wrong audience — re-run az command" message with the exact command to copy.
 - The app is strictly **read-only**: only `GET` requests (plus Graph `$batch`, which wraps GETs). Never add calls that modify Azure or Entra.
@@ -207,6 +208,7 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - An ARM token cannot call Graph and vice versa — check `aud` before every request batch.
 - When an app role is assigned to a group, list the group's **direct members only**. Filter out any member that is itself a group (`@odata.type` `#microsoft.graph.group`) — nested groups are not shown at all.
   - **User member** → effective: the role appears in the user's token.
-  - **Service principal / managed identity member** → *not* effective: an app calling with its own identity only gets roles assigned directly to its service principal; group membership gives it nothing. Show it greyed out with a short explanation rather than hiding it, since it's usually a misconfiguration.- Policy fetches can be numerous (one per operation). Limit concurrency (e.g. 8 in flight) and show progress.
+  - **Service principal / managed identity member** → *not* effective: an app calling with its own identity only gets roles assigned directly to its service principal; group membership gives it nothing. Show it greyed out with a short explanation rather than hiding it, since it's usually a misconfiguration.
+- Policy fetches can be numerous (one per operation). Limit concurrency (e.g. 8 in flight) and show progress.
 - Backend `url` and `set-backend-service base-url` often contain `{{named values}}`; resolve them, but if the named value is a secret or Key Vault reference, show the reference name instead of the value.
 - A backend entity can exist without any API using it, and an API can route to a URL with no backend entity — show both cases.

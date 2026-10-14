@@ -1,4 +1,4 @@
-# INITIAL_PLAN — APIM ↔ Entra access mapper
+# PROJECT_PLAN — APIM ↔ Entra access mapper
 
 > Nothing gets committed until you OK it (per CLAUDE.md › Git).
 
