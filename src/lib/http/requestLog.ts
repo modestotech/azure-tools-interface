@@ -52,8 +52,11 @@ export interface RequestLogger {
 
 export interface RequestLogCounters {
   readonly inFlight: number
-  readonly done: number
+  /** Requests that have ended, in any state: ok, empty, error or cancelled. */
+  readonly finished: number
+  /** Finished requests in the `error` state. */
   readonly errors: number
+  /** Retries of throttled (429 / 503) requests. */
   readonly retries: number
 }
 
@@ -64,14 +67,34 @@ export interface RequestLogState extends RequestLogger {
   clear(): void
 }
 
-export type ExportedLogEntry = Omit<RequestLogEntry, 'rawUrl'>
+/** The fields that may leave the browser. Listed explicitly, so a new unmasked field is never exported by accident. */
+const EXPORTED_FIELDS = [
+  'id',
+  'api',
+  'method',
+  'url',
+  'label',
+  'queryKey',
+  'state',
+  'status',
+  'startedAt',
+  'durationMs',
+  'bytes',
+  'retries',
+  'error',
+] as const satisfies readonly Exclude<keyof RequestLogEntry, 'rawUrl'>[]
 
-/** Entries for the JSON export: masked URLs only. */
+export type ExportedLogEntry = Pick<RequestLogEntry, (typeof EXPORTED_FIELDS)[number]>
+
+/** Entries for the JSON export: allowlisted fields only, so URLs are always masked. */
 export function exportableEntries(entries: readonly RequestLogEntry[]): ExportedLogEntry[] {
-  return entries.map(({ rawUrl, ...rest }) => rest)
+  return entries.map(
+    (entry) =>
+      Object.fromEntries(EXPORTED_FIELDS.map((field) => [field, entry[field]])) as ExportedLogEntry,
+  )
 }
 
-const EMPTY_COUNTERS: RequestLogCounters = { inFlight: 0, done: 0, errors: 0, retries: 0 }
+const EMPTY_COUNTERS: RequestLogCounters = { inFlight: 0, finished: 0, errors: 0, retries: 0 }
 
 export function createRequestLogStore(
   options: { capacity?: number; now?: () => number } = {},
@@ -79,12 +102,23 @@ export function createRequestLogStore(
   const capacity = options.capacity ?? 2000
   const now = options.now ?? (() => performance.now())
   let nextId = 1
+  // Requests started since the last clear() and not yet finished. retry()/finish() for any other id
+  // (e.g. a request that was in flight when the log was cleared) are ignored, so counters stay true.
+  const inFlight = new Set<number>()
 
+  /**
+   * Replaces one entry. Ids are consecutive and entries are only dropped from the front, so the
+   * index is computed instead of searched. An entry already dropped by the capacity cap is skipped.
+   */
   const update = (
     entries: readonly RequestLogEntry[],
     id: number,
     patch: (e: RequestLogEntry) => RequestLogEntry,
-  ) => entries.map((e) => (e.id === id ? patch(e) : e))
+  ): readonly RequestLogEntry[] => {
+    const index = id - (entries[0]?.id ?? id)
+    const entry = entries[index]
+    return entry?.id === id ? entries.with(index, patch(entry)) : entries
+  }
 
   return createStore<RequestLogState>()((set, get) => ({
     entries: [],
@@ -92,6 +126,7 @@ export function createRequestLogStore(
 
     start(request) {
       const id = nextId++
+      inFlight.add(id)
       const entry: RequestLogEntry = {
         id,
         api: request.api,
@@ -116,6 +151,7 @@ export function createRequestLogStore(
     },
 
     retry(id, status) {
+      if (!inFlight.has(id)) return
       const { entries, counters } = get()
       set({
         entries: update(entries, id, (e) => ({ ...e, retries: e.retries + 1, status })),
@@ -124,6 +160,7 @@ export function createRequestLogStore(
     },
 
     finish(id, result) {
+      if (!inFlight.delete(id)) return
       const { entries, counters } = get()
       set({
         entries: update(entries, id, (e) => ({
@@ -136,14 +173,15 @@ export function createRequestLogStore(
         })),
         counters: {
           ...counters,
-          inFlight: Math.max(0, counters.inFlight - 1),
-          done: counters.done + 1,
+          inFlight: counters.inFlight - 1,
+          finished: counters.finished + 1,
           errors: counters.errors + (result.state === 'error' ? 1 : 0),
         },
       })
     },
 
     clear() {
+      inFlight.clear()
       set({ entries: [], counters: EMPTY_COUNTERS })
     },
   }))
