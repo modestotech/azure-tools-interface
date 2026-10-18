@@ -37,7 +37,7 @@ describe('session store', () => {
     for (const secret of [arm, graph, TEST_TENANT, TEST_SUB]) {
       expect(window.location.href).not.toContain(secret)
     }
-    expect(sessionStore.getState()).toMatchObject({ armToken: arm, tenantId: TEST_TENANT })
+    expect(sessionStore.getState()).toMatchObject({ tokens: { arm, graph }, tenantId: TEST_TENANT })
   })
 
   it('goes through the mocked fetch, so tests can never reach real Azure', async () => {
@@ -51,7 +51,16 @@ describe('session store', () => {
   it('normalizes pasted tokens', () => {
     const token = armToken()
     sessionStore.getState().setToken('arm', `  Bearer ${token}\n`)
-    expect(sessionStore.getState().armToken).toBe(token)
+    expect(sessionStore.getState().tokens.arm).toBe(token)
+  })
+
+  it('sets each API token without touching the other', () => {
+    const arm = armToken()
+    const graph = graphToken()
+    sessionStore.getState().setToken('arm', arm)
+    sessionStore.getState().setToken('graph', graph)
+    sessionStore.getState().setToken('arm', '')
+    expect(sessionStore.getState().tokens).toEqual({ arm: '', graph })
   })
 
   it('clearSession wipes tokens, IDs, the client token cache and the request log', async () => {
@@ -67,8 +76,7 @@ describe('session store', () => {
 
     expect(resetClient).toHaveBeenCalledOnce()
     expect(sessionStore.getState()).toMatchObject({
-      armToken: '',
-      graphToken: '',
+      tokens: { arm: '', graph: '' },
       tenantId: '',
       subscriptionId: '',
     })
