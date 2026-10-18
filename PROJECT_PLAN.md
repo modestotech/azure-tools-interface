@@ -75,6 +75,10 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - `lib/token/ids.ts`: `setSubscriptionId` stores only a GUID, `setTenantId` only a GUID or domain name (otherwise `''`, returning `false`). `azTokenCommand` falls back to `<TENANT_ID>` on an invalid value.
   - The log export carries `errorKind` instead of the error text.
   - Demo mode fails unmocked ARM/Graph calls instead of passing them to real Azure.
+- **Architecture review follow-ups (open, 2026-10-18):**
+  - `sessionStore.test.ts` uses literal `https://management.azure.com` URLs; switch to `ARM` from `test/msw/handlers.ts`. `test/helpers/fakeJwt.ts` should take `aud` from `API_RESOURCES[api].resource`.
+  - Enforce layering in `eslint.config.js` (`no-restricted-imports` per folder: `lib` imports nothing above it, `services` never imports `app`/`domain`/`views`, `domain` never imports `app`/`views`/`scripts`). Do this before M2 adds the first service files.
+  - CSP: no milestone owned it. Now in M8 (below).
 
 **M2 — `services/` (raw layer, Zod-validated)**
 - Every ID put into a path (`sub`, `svc`, `apiId`, `opId`, `backendId` from policy XML, Graph `id`) goes through `encodePathSegment()`. Test: a policy with `backend-id="../../x"` gives a per-resource `invalid-request` error and sends nothing.
@@ -158,6 +162,7 @@ Starter scripts:
 **M8 — Hardening**
 - CORS check against real ARM/Graph (you run this, see §6). Add a Vite proxy only if needed, and document it in CLAUDE.md › Known gotchas.
 - Large-tenant performance pass. README.
+- CSP: one definition (e.g. in `vite.config.ts`) emitted both as the `<meta>` tag in `index.html` and as `globalHeaders` in `staticwebapp.config.json`; `connect-src` limited to the ARM and Graph origins. `tests/security/build.test.ts` checks that the two match.
 
 ## 3. Key design decisions
 

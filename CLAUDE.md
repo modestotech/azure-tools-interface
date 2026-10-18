@@ -140,6 +140,8 @@ Layering is one-way: `views` / `scripts` → `domain` → `services` → `lib`. 
 
 Services take an `HttpClient` as a parameter and never import from `app/`. The single instance lives in `app/session/httpClient.ts` and is passed in by the app shell; tests pass their own.
 
+Module-level state in `lib/` is limited to `requestLogStore` (`lib/http/requestLog.ts`) and the mask cache (`lib/http/mask.ts`). `clearSession()` wipes both explicitly. Any other app-wide instance lives in `app/` and registers with `onClearSession()`.
+
 Guidelines for the layers still to be built (from `TECH_DEBT_PLAN_M1.md`):
 - **Policy parser:** wrap fast-xml-parser's ordered output in a typed tree helper before writing extractors. Keep the supported / response-only / unresolved element lists in one data table. Apply `<base />` composition through one function for all four sections.
 - **Findings:** computed once in `domain/` (no auth, HTTP backend, no outbound auth, unresolved rules, …). Scripts filter or present them and never re-implement the checks. Keep `buildAccessModel()` pure and separate from the fetching in `useAccessModel()`.
@@ -246,7 +248,7 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - `tests/security/` must stay green: `noLeaks.test.ts` fails on network calls outside `lib/http/client.ts` and on any browser persistence; `build.test.ts` builds the production site and fails on a shipped service worker, external resources in `index.html`, or a URL origin not on its allowlist. Add an origin to `ALLOWED_ORIGINS` only with a reason, and never weaken these tests to make a change pass.
 - `public/mockServiceWorker.js` is for `pnpm dev:demo` only; a Vite plugin removes it from every other build.
 - Tests run in two Vitest projects: `dom` (jsdom) for `.tsx` tests and `src/app/`, `node` for everything else. Put new tests that need browser APIs under `src/app/` or in a `.tsx` file.
-- `src/test/setup.ts` calls `clearSession()` after every test. In tests, use `ARM` / `GRAPH` from `test/msw/handlers.ts` and `APIM_API_VERSION` instead of literal URLs and versions.
+- `src/test/setup.ts` calls `clearSession()` after every test. In tests, use `ARM` / `GRAPH` from `test/msw/handlers.ts` and `APIM_API_VERSION` instead of literal URLs and versions. Test helpers (e.g. `fakeJwt.ts`) take audiences from `API_RESOURCES[api].resource`. The exceptions are tests that check those constants or the origin allowlist themselves (`checks.test.ts`, `odata.test.ts`, `tests/security/`).
 - Never commit real tokens, tenant IDs, subscription IDs, policy XML or exports from a real tenant. Fixtures must be anonymized.
 
 ## Known gotchas
