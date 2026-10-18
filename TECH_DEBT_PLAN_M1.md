@@ -169,7 +169,7 @@ Ingenting är genomfört än. Listan är grupperad efter prioritet så att en de
 
 Du har uttryckligen godkänt commits (undantag från CLAUDE.md › Git för den här uppgiften). Arbetet görs på grenen `cleanup`. Före **varje** commit körs `pnpm typecheck && pnpm lint && pnpm test`, och committen görs bara om allt är grönt. Commit-meddelandet består av en rubrik plus en brödtext som förklarar varför, vad och vilken punkt (A/B) det gäller.
 
-0. **Committa planen** som `TECH_DEBT_PLAN.md` i repots rot (kopia av den här filen). Det är den första committen på grenen.
+0. **Committa planen** som `TECH_DEBT_PLAN.md` i repots rot (kopia av den här filen, numera `TECH_DEBT_PLAN_M1.md`). Det är den första committen på grenen.
 1. **Centralisera endpoints och api-versioner** (A2): `resources.ts`, `apiVersion.ts`, `readOnly.ts`, `handlers.ts`, `client.test.ts`
 2. **Behandla 404 som tomt i klient och logg** (A8): `client.ts`, `requestLog.ts`, `index.ts`, tester
 3. **Batch: kräv unika id:n och rapportera saknade svar** (A7): `readOnly.ts`, `client.ts`, tester
@@ -197,7 +197,9 @@ Avvikelser från planen:
 - Steg 7: klienten cachar avkodade claims. Steg 10 lade till `HttpClient.reset()` så att "Clear session" även tömmer den cachen (den höll tokensträngen). Steg 13 utökade `reset()` till att också glömma de cachade mask-ID:na.
 - Steg 8: subklasserna (`UnauthorizedError` m.fl.) är ersatta av factory-funktioner. `azCommand` ligger på `HttpError` och sätts för både `unauthorized` och `token-expired`.
 
-Kvar: ändringar i `CLAUDE.md` (stäms av separat) och B2–B4, som följs när de filerna skapas i M3–M6.
+`CLAUDE.md` är uppdaterad med reglerna från refaktoreringen och riktlinjerna i B2–B4 (godkänd separat, efter steg 14).
+
+Kvar: B2–B4 följs när de filerna skapas i M3–M6.
 
 ## Verifiering av analysen
 Läs-bara verifiering av påståendena:
