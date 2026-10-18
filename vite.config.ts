@@ -28,15 +28,38 @@ function dropMockServiceWorker(): Plugin {
   }
 }
 
+/** Tests that need a DOM: React components (`.tsx`) and the app shell, which uses browser APIs. */
+const DOM_TESTS = ['src/**/*.test.tsx', 'src/app/**/*.test.ts']
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), dropMockServiceWorker()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   test: {
-    environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.ts'],
+    // Creating a jsdom environment is the slowest part of a test file, and most tests (lib,
+    // services, domain, security) don't need a DOM. Only React and browser-API tests get jsdom.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'dom',
+          environment: 'jsdom',
+          setupFiles: ['./src/test/setup.dom.ts'],
+          include: DOM_TESTS,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'node',
+          environment: 'node',
+          include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+          exclude: DOM_TESTS,
+        },
+      },
+    ],
   },
 })

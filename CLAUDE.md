@@ -243,6 +243,7 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - Unit-test the policy parser and mapper heavily using real-world-shaped XML fixtures in `src/test/fixtures/`. No live Azure calls in tests.
 - `tests/security/` must stay green: `noLeaks.test.ts` fails on network calls outside `lib/http/client.ts` and on any browser persistence; `build.test.ts` builds the production site and fails on a shipped service worker, external resources in `index.html`, or a URL origin not on its allowlist. Add an origin to `ALLOWED_ORIGINS` only with a reason, and never weaken these tests to make a change pass.
 - `public/mockServiceWorker.js` is for `pnpm dev:demo` only; a Vite plugin removes it from every other build.
+- Tests run in two Vitest projects: `dom` (jsdom) for `.tsx` tests and `src/app/`, `node` for everything else. Put new tests that need browser APIs under `src/app/` or in a `.tsx` file.
 - `src/test/setup.ts` calls `clearSession()` after every test. In tests, use `ARM` / `GRAPH` from `test/msw/handlers.ts` and `APIM_API_VERSION` instead of literal URLs and versions.
 - Never commit real tokens, tenant IDs, subscription IDs, policy XML or exports from a real tenant. Fixtures must be anonymized.
 
