@@ -187,6 +187,18 @@ Du har uttryckligen godkänt commits (undantag från CLAUDE.md › Git för den 
 
 Görs inte nu: ändringar i `CLAUDE.md` (stäms av separat) och B2–B4 (filerna finns inte än). Ingen push.
 
+## Status
+
+Steg 0–14 är genomförda på grenen `cleanup`, en commit per steg (se `git log`). Varje commit är grön på `pnpm typecheck && pnpm lint && pnpm test`.
+
+Avvikelser från planen:
+
+- Steg 1: provider-tabellen för `GET {resourceId}` är inte tillagd. Versionerna verifieras och läggs in i M2.
+- Steg 7: klienten cachar avkodade claims. Steg 10 lade till `HttpClient.reset()` så att "Clear session" även tömmer den cachen (den höll tokensträngen). Steg 13 utökade `reset()` till att också glömma de cachade mask-ID:na.
+- Steg 8: subklasserna (`UnauthorizedError` m.fl.) är ersatta av factory-funktioner. `azCommand` ligger på `HttpError` och sätts för både `unauthorized` och `token-expired`.
+
+Kvar: ändringar i `CLAUDE.md` (stäms av separat) och B2–B4, som följs när de filerna skapas i M3–M6.
+
 ## Verifiering av analysen
 Läs-bara verifiering av påståendena:
 - `grep -rn "management.azure.com\|graph.microsoft.com" src` → bekräftar A2.

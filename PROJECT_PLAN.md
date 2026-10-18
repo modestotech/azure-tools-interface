@@ -17,8 +17,6 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 
 **Analysis scope: exactly one API.** The user picks subscription → APIM instance → API, and there is no "all APIs" option. Instance-wide calls are limited to filling the pickers (subscriptions, services, API names), the service itself (`identity`) and the global policy.
 
-
-
 | Section | Content | What the app does with it |
 |---|---|---|
 | `inbound` | **No `<base/>`**, so global and product inbound policies are *not* inherited | Show "parent inbound ignored" on the API |
@@ -58,7 +56,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 
 **M1 — `lib/` foundations**
 - `lib/token`: JWT decode (`aud`, `tid`, `upn`/`oid`, `exp`) plus checks for audience, tenant and expiry. Unit-tested.
-- `lib/http`: a `request()` wrapper with:
+- `lib/http`: an HTTP client (`createHttpClient()` in `lib/http/client.ts`) with:
   - the auth header, and an `aud` guard before each request batch
   - GET-only enforcement; the only exception is POST to `https://graph.microsoft.com/v1.0/$batch`, and only when every sub-request is a GET
   - paging (`nextLink` / `@odata.nextLink`)
@@ -157,7 +155,7 @@ Starter scripts:
 
 ## 4. Critical files (to create)
 
-`src/lib/http/request.ts`, `src/lib/http/requestLog.ts`, `src/lib/token/jwt.ts`, `src/services/arm/*.ts`, `src/services/graph/*.ts`, `src/domain/model.ts`, `src/domain/policy-parser/{compose,extract,classify}.ts`, `src/domain/mapper/buildAccessModel.ts`, `src/views/registry.ts`, `src/scripts/registry.ts`, `src/components/request-log/RequestLog.tsx`, `src/test/fixtures/**`, `src/test/msw/handlers.ts`.
+`src/lib/http/client.ts`, `src/lib/http/requestLog.ts`, `src/lib/token/jwt.ts`, `src/services/arm/*.ts`, `src/services/graph/*.ts`, `src/domain/model.ts`, `src/domain/policy-parser/{compose,extract,classify}.ts`, `src/domain/mapper/buildAccessModel.ts`, `src/views/registry.ts`, `src/scripts/registry.ts`, `src/components/request-log/RequestLog.tsx`, `src/test/fixtures/**`, `src/test/msw/handlers.ts`.
 
 ## 5. Verification
 
