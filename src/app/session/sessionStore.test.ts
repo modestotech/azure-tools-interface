@@ -8,7 +8,6 @@ import { sessionStore } from './sessionStore'
 
 describe('session store', () => {
   afterEach(() => {
-    clearSession()
     vi.restoreAllMocks()
   })
 
