@@ -70,6 +70,10 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - `app/session` store: tokens, sub ID and tenant ID, held in memory only. A unit test asserts nothing reaches `localStorage` or `sessionStorage`.
 
 **M2 — `services/` (raw layer, Zod-validated)**
+- **`lib/http` hardening first**, before any service builds URLs:
+  - `encodePathSegment()` in `lib/http/odata.ts`. Every ID put into a path (`sub`, `svc`, `apiId`, `opId`, `backendId` from policy XML, Graph `id`) goes through it. It rejects `..`, `/`, `?` and `#` with `invalid-request` and percent-encodes the rest. Test: `backend-id="../../x"` throws.
+  - `readOnly.ts`: a `$batch` sub-request URL must be a relative path with no `..`, `//`, `\` or scheme. Tests with `/../beta/…` and `//evil`.
+  - `client.ts` `fetchOnce`: set `redirect: 'error'` and `credentials: 'omit'`. Test: a 302 gives a `network` error and is not followed.
 - `services/arm`: subscriptions (`/subscriptions`, api-version `2022-12-01`), services (including `identity.userAssignedIdentities` with `clientId`/`principalId`), APIs (list for the picker, including `serviceUrl`). For the selected API only: operations, policies at global / API / operation scope (`format=rawxml`, where 404 means "no policy"), each referenced backend via `backends/{backendId}`, and an optional `GET {resourceId}` that tolerates 403/404. Products, fragments and named values are out of scope (§1).
 - `services/graph`:
   - service principal lookups: by appId, by id, by `servicePrincipalNames` filter (used for both the inbound `audience` and the outbound `resource`)
@@ -99,6 +103,8 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - two token fields, plus tenant ID (prefilled from the ARM token's `tid`); the subscription is picked in the scope picker
   - decoded claim cards with warnings
   - copyable `az` commands (prefilled with the tenant ID)
+  - tenant ID validation: only a GUID or a domain name (`^[a-z0-9.-]+$`) is accepted. An invalid value shows a field error and never reaches an `az` command; `azTokenCommand` also falls back to `<TENANT_ID>` on an invalid value, so the command the user copies can't carry injected shell text
+  - `setSubscriptionId` accepts only a GUID; the scope picker is its only caller
   - expiry countdown
   - **Safety notice**, shown above the token fields before anything is pasted. Plain language, no fine print:
     - **Not saved:** tokens are kept in this tab's memory only. Nothing goes to `localStorage`, `sessionStorage`, cookies or the URL. Reloading or closing the tab erases them, and a **"Clear session"** button does the same immediately, wiping tokens and all fetched data.
@@ -109,8 +115,11 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - **Content Security Policy**, applied to the production build: a `<meta>` tag injected at build time, plus `staticwebapp.config.json` › `globalHeaders`. It isn't applied to `pnpm dev`, because Vite's hot reload needs inline scripts and a websocket.
     - `connect-src` is limited to `'self' https://management.azure.com https://graph.microsoft.com`.
     - `script-src 'self'`, no external fonts, scripts or images.
+    - `frame-ancestors 'none'`, `base-uri 'none'`, `object-src 'none'`, `form-action 'none'`.
+    - `globalHeaders` also sets `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
 
-    This turns "not sent anywhere else" from a promise into something the browser enforces. A test asserts the header.
+    This turns "not sent anywhere else" from a promise into something the browser enforces. `tests/security/build.test.ts` asserts every directive and header above.
+- **Demo mode** (`pnpm dev:demo`): `main.tsx` starts MSW with `onUnhandledRequest: 'error'` instead of `'bypass'`, so an unmocked call never reaches real Azure. A banner says "fictional data — don't paste real tokens".
 - Scope picker, three required steps:
   1. **Subscription**: dropdown from `GET /subscriptions` (name + masked ID). No pasting of subscription IDs.
   2. **APIM instance**: dropdown of services in that subscription.
@@ -123,6 +132,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - Header counters: in flight / done / errors / retries; progress bar for policy fetches.
 - Filters by source (ARM/Graph) and status.
 - Exports the log as JSON with masked URLs. Respects `prefers-reduced-motion`.
+- The export doesn't include Azure's free-text error messages, which can hold UPNs, object IDs and resource names. `error` is exported as the `HttpError` `kind` plus `status` only (the full masked message stays on screen). Test: an error message containing a UPN and a GUID leaves no trace in the export.
 
 **M6 — Views (`views/registry.ts`)**
 - `operations-table`: TanStack Table (virtualized) showing:

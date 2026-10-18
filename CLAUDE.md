@@ -53,7 +53,8 @@ az account get-access-token --resource https://graph.microsoft.com --tenant <TEN
 Rules:
 - Tokens, the selected subscription ID and tenant ID are held **in memory only** (React state / store). Never write them to `localStorage`, `sessionStorage`, cookies, URLs, logs or error messages.
 - The on-screen request log shows URLs with the subscription ID and tenant ID masked as `{sub}` / `{tid}` by default. An in-memory "reveal" toggle may unmask them. Tokens are never shown, and log exports are always masked.
-- Log exports go through an allowlist (`EXPORTED_FIELDS` in `lib/http/requestLog.ts`). A new log field is exported only if it's added there on purpose.
+- Log exports go through an allowlist (`EXPORTED_FIELDS` in `lib/http/requestLog.ts`). A new log field is exported only if it's added there on purpose. Azure's free-text error messages are never exported (they can hold UPNs, object IDs and resource names); export the error `kind` and `status` instead.
+- Tenant and subscription IDs are validated before they're stored: a subscription ID must be a GUID, a tenant ID a GUID or a domain name. Nothing unvalidated goes into a URL or an `az` command.
 - Anything that holds session data (query cache, stores, view state) registers with `onClearSession()` (`app/session/clearSession.ts`), so "Clear session" wipes it.
 - Decode the JWT (no validation needed) to show `aud`, `tid`, `upn`/`oid` and `exp`. Warn if `aud` doesn't match the expected resource, if `tid` doesn't match the entered tenant, or if the token expires soon (they typically last ~60–90 min).
 - The HTTP client refuses to send when the token is missing, for the wrong audience, or expired (`token-expired`, with the az command). A tenant mismatch or a token about to expire is only a warning on the token screen.
@@ -183,6 +184,7 @@ A 404 on a policy endpoint means "no policy at that scope". Fetch those with `ge
 - APIM's user-assigned managed identity as a service principal: `/servicePrincipals/{principalId}` and its outbound permissions via `/servicePrincipals/{principalId}/appRoleAssignments`
 - Target of `authentication-managed-identity`: resolve the `resource` audience to a service principal with `/servicePrincipals?$filter=servicePrincipalNames/any(x:x eq '{resource}')`
 - Values in `$filter` come from policy XML. Always build them with `odataString()` and `withQuery()` from `lib/http/odata.ts`, never by string interpolation.
+- The same goes for IDs in URL paths, ARM and Graph alike (`sub`, `svc`, `apiId`, `opId`, `backendId`, Graph `id`): build them with `encodePathSegment()` from `lib/http/odata.ts`, which rejects `..`, `/`, `?` and `#`.
 - Use `$select` to keep payloads small, `$batch` (max 20 requests per batch) for bulk lookups, follow `@odata.nextLink`, and honor `Retry-After` on 429.
 
 ## Policy parsing rules
