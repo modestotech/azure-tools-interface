@@ -41,6 +41,11 @@ export interface BatchResponse {
 export interface HttpClient {
   /** GET one resource; returns parsed JSON. Validate it with Zod in `services/`. */
   getJson(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown>
+  /**
+   * Like `getJson`, but a 404 resolves to `null` and is logged as `empty`, not as an error.
+   * For resources whose absence is a normal answer, e.g. "no policy at that scope".
+   */
+  getJsonOrNull(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown>
   /** GET a collection, following `nextLink` (ARM) / `@odata.nextLink` (Graph); returns all `value` items. */
   getAllPages(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown[]>
   /** Graph `$batch` of GETs, chunked by 20. Sub-requests answering 429 are retried. Order is preserved. */
@@ -172,7 +177,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     url: string,
     body: unknown,
     options: RequestOptions,
-    label?: string,
+    extra: { label?: string; notFoundIsEmpty?: boolean } = {},
   ): Promise<{ json: unknown; headers: Headers }> {
     assertReadOnly(api, method, url, body)
     assertHost(api, url)
@@ -184,7 +189,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
       method,
       url: maskedUrl,
       rawUrl: url,
-      label,
+      label: extra.label,
       queryKey: options.queryKey ? mask(JSON.stringify(options.queryKey)) : undefined,
     })
 
@@ -218,6 +223,11 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
 
         const text = await response.text()
         const bytes = new TextEncoder().encode(text).byteLength
+
+        if (response.status === 404 && extra.notFoundIsEmpty) {
+          logger.finish(id, { state: 'empty', status: 404, bytes })
+          return { json: null, headers: response.headers }
+        }
 
         if (!response.ok) {
           const detail = mask(errorDetail(response.status, response.statusText, text))
@@ -281,6 +291,10 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     return (await send(api, 'GET', url, undefined, options)).json
   }
 
+  async function getJsonOrNull(api: ApiKind, url: string, options: RequestOptions = {}) {
+    return (await send(api, 'GET', url, undefined, options, { notFoundIsEmpty: true })).json
+  }
+
   async function getAllPages(api: ApiKind, url: string, options: RequestOptions = {}) {
     const items: unknown[] = []
     let next: string | null | undefined = url
@@ -308,7 +322,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     for (let attempt = 0; pending.length > 0; attempt++) {
       const body = { requests: pending.map((r) => ({ id: r.id, method: 'GET', url: r.url })) }
       const label = `$batch ×${String(pending.length)}`
-      const { json } = await send('graph', 'POST', GRAPH_BATCH_URL, body, options, label)
+      const { json } = await send('graph', 'POST', GRAPH_BATCH_URL, body, options, { label })
       const parsed = batchResponseSchema.safeParse(json)
       if (!parsed.success) {
         throw new HttpError('invalid-response', 'graph', 'Unexpected $batch response shape.')
@@ -340,5 +354,5 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     return results.flat()
   }
 
-  return { getJson, getAllPages, batch }
+  return { getJson, getJsonOrNull, getAllPages, batch }
 }

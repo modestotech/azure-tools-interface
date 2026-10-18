@@ -2,7 +2,8 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { ApiKind } from '@/lib/token'
 import type { HttpMethod } from './readOnly'
 
-export type RequestState = 'pending' | 'ok' | 'error' | 'cancelled'
+/** `empty`: a 404 the caller expects, e.g. no policy at a scope. Shown dimmed, not counted as an error. */
+export type RequestState = 'pending' | 'ok' | 'empty' | 'error' | 'cancelled'
 
 export interface RequestLogEntry {
   readonly id: number

@@ -62,7 +62,7 @@ describe('createHttpClient', () => {
       method: 'GET',
       state: 'ok',
       status: 200,
-      url: `${ARM}/subscriptions/{sub}/providers/Microsoft.ApiManagement/service?api-version=2024-05-01`,
+      url: `${ARM}/subscriptions/{sub}/providers/Microsoft.ApiManagement/service?api-version=${APIM_API_VERSION}`,
       queryKey: '["arm","{sub}"]',
     })
     expect(entry?.bytes).toBeGreaterThan(0)
@@ -119,6 +119,27 @@ describe('createHttpClient', () => {
     const none = setup({ getToken: () => undefined })
     expect((await caught(none.client.getJson('arm', SVC_URL))).kind).toBe('no-token')
     expect(swapped.log.getState().entries).toHaveLength(0)
+  })
+
+  it('resolves a 404 to null with getJsonOrNull and logs it as empty, not as an error', async () => {
+    server.use(
+      http.get(`${ARM}/policies/policy`, () =>
+        HttpResponse.json({ error: { code: 'ResourceNotFound' } }, { status: 404 }),
+      ),
+    )
+    const { client, log } = setup()
+    await expect(client.getJsonOrNull('arm', `${ARM}/policies/policy`)).resolves.toBeNull()
+    expect(log.getState().entries[0]).toMatchObject({ state: 'empty', status: 404 })
+    expect(log.getState().counters.errors).toBe(0)
+
+    expect((await caught(client.getJson('arm', `${ARM}/policies/policy`))).kind).toBe('not-found')
+    expect(log.getState().counters.errors).toBe(1)
+  })
+
+  it('still throws other errors from getJsonOrNull', async () => {
+    server.use(http.get(`${ARM}/forbidden`, () => new HttpResponse(null, { status: 403 })))
+    const error = await caught(setup().client.getJsonOrNull('arm', `${ARM}/forbidden`))
+    expect(error.kind).toBe('forbidden')
   })
 
   it('honours Retry-After on 429 and then succeeds', async () => {

@@ -37,6 +37,14 @@ describe('request log store', () => {
     expect(store.getState().counters.errors).toBe(1)
   })
 
+  it('counts an expected 404 (empty) as done but not as an error', () => {
+    const store = createRequestLogStore()
+    const id = store.getState().start(request)
+    store.getState().finish(id, { state: 'empty', status: 404 })
+    expect(store.getState().entries[0]).toMatchObject({ state: 'empty', status: 404 })
+    expect(store.getState().counters).toMatchObject({ done: 1, errors: 0 })
+  })
+
   it('keeps only the newest entries once capacity is reached, but keeps counting', () => {
     const store = createRequestLogStore({ capacity: 3 })
     for (let i = 0; i < 5; i++) {
