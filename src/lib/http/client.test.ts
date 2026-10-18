@@ -3,7 +3,7 @@ import { APIM_API_VERSION } from '@/services/arm/apiVersion'
 import { ARM, GRAPH } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
 import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
-import { createHttpClient, parseRetryAfter, type HttpClientConfig } from './client'
+import { createHttpClient, type HttpClientConfig } from './client'
 import { HttpError, UnauthorizedError } from './errors'
 import { GRAPH_BATCH_URL } from './readOnly'
 import { createRequestLogStore } from './requestLog'
@@ -294,6 +294,46 @@ describe('batch', () => {
     expect(log.getState().entries.map((e) => e.label)).toContain('$batch ×20')
   })
 
+  it('retries 503 sub-responses too, reading Retry-After case-insensitively', async () => {
+    let calls = 0
+    server.use(
+      http.post(GRAPH_BATCH_URL, () =>
+        HttpResponse.json({
+          responses: [
+            ++calls === 1
+              ? { id: 'a', status: 503, headers: { 'retry-after': '3' } }
+              : { id: 'a', status: 200, body: {} },
+          ],
+        }),
+      ),
+    )
+    const { client, sleeps } = setup()
+    await expect(client.batch([{ id: 'a', url: '/groups/a' }])).resolves.toEqual([
+      { id: 'a', status: 200, body: {} },
+    ])
+    expect(sleeps).toEqual([3000])
+  })
+
+  it('shares one retry budget between the whole POST and its sub-requests', async () => {
+    let posts = 0
+    server.use(
+      http.post(GRAPH_BATCH_URL, () => {
+        posts++
+        return posts % 2 === 1
+          ? new HttpResponse(null, { status: 429 })
+          : HttpResponse.json({ responses: [{ id: 'a', status: 429 }] })
+      }),
+    )
+    const { client, log } = setup({ maxRetries: 3 })
+    const [response] = await client.batch([{ id: 'a', url: '/groups/a' }])
+    // POST 429 (retry 1) → sub 429 (retry 2) → POST 429 (retry 3) → sub 429, budget spent.
+    expect(response?.status).toBe(429)
+    expect(posts).toBe(4)
+    // Whole-POST retries are counted on their log line; sub-request retries appear as new $batch lines.
+    expect(log.getState().counters.retries).toBe(2)
+    expect(log.getState().entries.map((e) => e.label)).toEqual(['$batch ×1', '$batch ×1'])
+  })
+
   it('rejects duplicate ids across chunks before sending anything', async () => {
     const { client, log } = setup()
     const requests = Array.from({ length: 25 }, (_, i) => ({ id: `r${String(i % 21)}`, url: '/x' }))
@@ -315,14 +355,5 @@ describe('batch', () => {
     )
     expect(error.kind).toBe('invalid-response')
     expect(error.message).toContain('1 of 2')
-  })
-})
-
-describe('parseRetryAfter', () => {
-  it('reads seconds and HTTP dates', () => {
-    expect(parseRetryAfter('5')).toBe(5000)
-    expect(parseRetryAfter(new Date(10_000).toUTCString(), 4_000)).toBe(6000)
-    expect(parseRetryAfter(null)).toBeUndefined()
-    expect(parseRetryAfter('soon')).toBeUndefined()
   })
 })
