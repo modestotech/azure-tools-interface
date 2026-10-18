@@ -131,6 +131,8 @@ src/
   scripts/             # read-only analyses, registered in scripts/registry.ts
   components/          # shared UI
   test/                # fixtures (sample policy XML, ARM/Graph JSON) and MSW handlers
+tests/
+  security/            # Node-side guards: source scan for network/storage use, production-build checks
 ```
 
 Layering is one-way: `views` / `scripts` → `domain` → `services` → `lib`. Views never call fetch directly and never parse raw ARM/Graph shapes; they consume the normalized domain model.
@@ -239,6 +241,8 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - Errors are shown per resource, not as a global failure — a forbidden Graph call should not block the APIM view. Services return per-resource outcomes as `ResourceResult` (`settle()` in `services/result.ts`).
 - Tell HTTP errors apart by `kind` (`isHttpError(e, 'forbidden')`), never with `instanceof`.
 - Unit-test the policy parser and mapper heavily using real-world-shaped XML fixtures in `src/test/fixtures/`. No live Azure calls in tests.
+- `tests/security/` must stay green: `noLeaks.test.ts` fails on network calls outside `lib/http/client.ts` and on any browser persistence; `build.test.ts` builds the production site and fails on a shipped service worker, external resources in `index.html`, or a URL origin not on its allowlist. Add an origin to `ALLOWED_ORIGINS` only with a reason, and never weaken these tests to make a change pass.
+- `public/mockServiceWorker.js` is for `pnpm dev:demo` only; a Vite plugin removes it from every other build.
 - `src/test/setup.ts` calls `clearSession()` after every test. In tests, use `ARM` / `GRAPH` from `test/msw/handlers.ts` and `APIM_API_VERSION` instead of literal URLs and versions.
 - Never commit real tokens, tenant IDs, subscription IDs, policy XML or exports from a real tenant. Fixtures must be anonymized.
 
