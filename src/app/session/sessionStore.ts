@@ -1,6 +1,6 @@
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
-import { normalizeToken, type ApiKind } from '@/lib/token'
+import { isSubscriptionId, isTenantId, normalizeToken, type ApiKind } from '@/lib/token'
 
 /**
  * Tokens and IDs live here, in memory only. No persist middleware, no storage, no URL.
@@ -16,8 +16,14 @@ export interface SessionState {
    */
   readonly subscriptionId: string
   setToken(api: ApiKind, raw: string): void
-  setTenantId(tenantId: string): void
-  setSubscriptionId(subscriptionId: string): void
+  /**
+   * Stores a tenant GUID or domain name. Anything else is stored as `''` and returns false, so an
+   * invalid value never reaches a URL, the masking or an `az` command. Keep the typed draft in the
+   * input field, not here.
+   */
+  setTenantId(tenantId: string): boolean
+  /** Stores a subscription GUID. Anything else is stored as `''` and returns false. */
+  setSubscriptionId(subscriptionId: string): boolean
   reset(): void
 }
 
@@ -33,10 +39,16 @@ export const sessionStore = createStore<SessionState>()((set) => ({
     set((state) => ({ tokens: { ...state.tokens, [api]: normalizeToken(raw) } }))
   },
   setTenantId(tenantId) {
-    set({ tenantId: tenantId.trim() })
+    const value = tenantId.trim()
+    const valid = isTenantId(value)
+    set({ tenantId: valid ? value : '' })
+    return valid
   },
   setSubscriptionId(subscriptionId) {
-    set({ subscriptionId: subscriptionId.trim() })
+    const value = subscriptionId.trim()
+    const valid = isSubscriptionId(value)
+    set({ subscriptionId: valid ? value : '' })
+    return valid
   },
   reset() {
     set(EMPTY)

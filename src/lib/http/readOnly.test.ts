@@ -39,6 +39,11 @@ describe('assertReadOnly', () => {
       'an absolute sub-request URL',
       batch([{ id: '1', method: 'GET', url: 'https://evil.example.net/' }]),
     ],
+    ['a protocol-relative sub-request URL', batch([{ id: '1', method: 'GET', url: '//evil' }])],
+    ['a .. segment', batch([{ id: '1', method: 'GET', url: '/../beta/users' }])],
+    ['a . segment', batch([{ id: '1', method: 'GET', url: '/groups/./a' }])],
+    ['a percent-encoded ..', batch([{ id: '1', method: 'GET', url: '/groups/%2E%2E/x' }])],
+    ['a backslash', batch([{ id: '1', method: 'GET', url: '/groups\\..\\x' }])],
     ['an empty batch', batch([])],
     [
       'more than 20 requests',
@@ -56,6 +61,13 @@ describe('assertReadOnly', () => {
     expect(() => {
       assertReadOnly('graph', 'POST', GRAPH_BATCH_URL, body)
     }).toThrow()
+  })
+
+  it('allows dots and slashes in the query string of a $batch sub-request', () => {
+    const url = "/servicePrincipals?$filter=servicePrincipalNames/any(x:x eq 'api://a.b/c')"
+    expect(() => {
+      assertReadOnly('graph', 'POST', GRAPH_BATCH_URL, batch([{ id: '1', method: 'GET', url }]))
+    }).not.toThrow()
   })
 
   it('blocks POST to any other Graph URL, and $batch with an ARM token', () => {

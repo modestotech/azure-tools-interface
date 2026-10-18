@@ -1,4 +1,4 @@
-import { odataString, withQuery } from './odata'
+import { encodePathSegment, odataString, withQuery } from './odata'
 
 describe('odataString', () => {
   it('quotes values and doubles embedded single quotes', () => {
@@ -24,4 +24,21 @@ describe('withQuery', () => {
     expect(withQuery('https://x/y?a=1', { b: '2', c: undefined })).toBe('https://x/y?a=1&b=2')
     expect(withQuery('https://x/y', {})).toBe('https://x/y')
   })
+})
+
+describe('encodePathSegment', () => {
+  it('percent-encodes an ordinary id', () => {
+    expect(encodePathSegment('arm', 'echo-api')).toBe('echo-api')
+    expect(encodePathSegment('arm', 'a b&c')).toBe('a%20b%26c')
+    expect(encodePathSegment('arm', '%2e%2e')).toBe('%252e%252e')
+  })
+
+  it.each(['', '.', '..', '../../x', 'a/b', 'a\\b', 'a?api-version=x', 'a#b', 'a\nb'])(
+    'refuses %j',
+    (value) => {
+      expect(() => encodePathSegment('arm', value)).toThrow(
+        expect.objectContaining({ kind: 'invalid-request' }),
+      )
+    },
+  )
 })

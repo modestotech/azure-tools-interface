@@ -217,6 +217,10 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         body: body === undefined ? null : JSON.stringify(body),
+        // ARM and Graph answer API calls directly. A redirect would send the request (and, for a
+        // same-origin hop, the token) somewhere the host check never saw, so it fails as a network error.
+        redirect: 'error',
+        credentials: 'omit',
         signal: signal ?? null,
       }),
     )
@@ -280,7 +284,13 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     })
 
     const fail = (error: HttpError, status?: number, bytes?: number): never => {
-      logger.finish(id, { state: 'error', status, bytes, error: error.message })
+      logger.finish(id, {
+        state: 'error',
+        status,
+        bytes,
+        error: error.message,
+        errorKind: error.kind,
+      })
       throw error
     }
 

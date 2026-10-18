@@ -1,5 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { ApiKind } from '@/lib/token'
+import type { HttpErrorKind } from './errors'
 import type { HttpMethod } from './readOnly'
 
 /** `empty`: a 404 the caller expects, e.g. no policy at a scope. Shown dimmed, not counted as an error. */
@@ -23,8 +24,12 @@ export interface RequestLogEntry {
   readonly durationMs: number | undefined
   readonly bytes: number | undefined
   readonly retries: number
-  /** Masked error message. */
+  /**
+   * Masked error message, shown on screen only. It can quote Azure's own text (UPNs, object IDs,
+   * resource names), so it is never exported; `errorKind` is.
+   */
   readonly error: string | undefined
+  readonly errorKind: HttpErrorKind | undefined
 }
 
 export interface RequestStart {
@@ -41,6 +46,7 @@ export interface RequestFinish {
   readonly status?: number | undefined
   readonly bytes?: number | undefined
   readonly error?: string | undefined
+  readonly errorKind?: HttpErrorKind | undefined
 }
 
 /** What the HTTP client calls. Every request is logged here, so callers never log manually. */
@@ -81,12 +87,12 @@ const EXPORTED_FIELDS = [
   'durationMs',
   'bytes',
   'retries',
-  'error',
-] as const satisfies readonly Exclude<keyof RequestLogEntry, 'rawUrl'>[]
+  'errorKind',
+] as const satisfies readonly Exclude<keyof RequestLogEntry, 'rawUrl' | 'error'>[]
 
 export type ExportedLogEntry = Pick<RequestLogEntry, (typeof EXPORTED_FIELDS)[number]>
 
-/** Entries for the JSON export: allowlisted fields only, so URLs are always masked. */
+/** Entries for the JSON export: allowlisted fields only, so URLs are always masked and Azure's error text stays out. */
 export function exportableEntries(entries: readonly RequestLogEntry[]): ExportedLogEntry[] {
   return entries.map(
     (entry) =>
@@ -142,6 +148,7 @@ export function createRequestLogStore(
         bytes: undefined,
         retries: 0,
         error: undefined,
+        errorKind: undefined,
       }
       const { entries, counters } = get()
       const kept =
@@ -169,6 +176,7 @@ export function createRequestLogStore(
           status: result.status ?? e.status,
           bytes: result.bytes,
           error: result.error,
+          errorKind: result.errorKind,
           durationMs: Math.round(now() - e.startedAt),
         })),
         counters: {

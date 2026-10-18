@@ -1,3 +1,5 @@
+import { isTenantId } from './ids'
+
 /** The two APIs the app talks to. A token is only valid for one of them. */
 export type ApiKind = 'arm' | 'graph'
 
@@ -45,8 +47,12 @@ export function isExpectedAudience(api: ApiKind, aud: string): boolean {
   return API_RESOURCES[api].audiences.some((a) => a.toLowerCase() === normalized)
 }
 
-/** The command the user runs to get a fresh token. Contains no secrets. */
+/**
+ * The command the user runs to get a fresh token. Contains no secrets. An invalid tenant ID is
+ * replaced by the placeholder, so the copied command never carries injected shell text.
+ */
 export function azTokenCommand(api: ApiKind, tenantId?: string): string {
-  const tenant = tenantId?.trim() ? tenantId.trim() : '<TENANT_ID>'
+  const trimmed = tenantId?.trim() ?? ''
+  const tenant = isTenantId(trimmed) ? trimmed : '<TENANT_ID>'
   return `az account get-access-token --resource ${API_RESOURCES[api].resource} --tenant ${tenant} --query accessToken -o tsv`
 }
