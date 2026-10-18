@@ -293,6 +293,29 @@ describe('batch', () => {
     expect(sleeps).toEqual([1000])
     expect(log.getState().entries.map((e) => e.label)).toContain('$batch ×20')
   })
+
+  it('rejects duplicate ids across chunks before sending anything', async () => {
+    const { client, log } = setup()
+    const requests = Array.from({ length: 25 }, (_, i) => ({ id: `r${String(i % 21)}`, url: '/x' }))
+    expect((await caught(client.batch(requests))).kind).toBe('invalid-request')
+    expect(log.getState().entries).toHaveLength(0)
+  })
+
+  it('fails instead of silently dropping a sub-response Graph left out', async () => {
+    server.use(
+      http.post(GRAPH_BATCH_URL, () =>
+        HttpResponse.json({ responses: [{ id: 'a', status: 200, body: {} }] }),
+      ),
+    )
+    const error = await caught(
+      setup().client.batch([
+        { id: 'a', url: '/groups/a' },
+        { id: 'b', url: '/groups/b' },
+      ]),
+    )
+    expect(error.kind).toBe('invalid-response')
+    expect(error.message).toContain('1 of 2')
+  })
 })
 
 describe('parseRetryAfter', () => {

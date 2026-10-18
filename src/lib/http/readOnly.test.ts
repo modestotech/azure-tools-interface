@@ -44,6 +44,13 @@ describe('assertReadOnly', () => {
       'more than 20 requests',
       batch(Array.from({ length: 21 }, (_, i) => ({ id: String(i), method: 'GET', url: '/x' }))),
     ],
+    [
+      'duplicate sub-request ids',
+      batch([
+        { id: '1', method: 'GET', url: '/a' },
+        { id: '1', method: 'GET', url: '/b' },
+      ]),
+    ],
     ['a malformed body', 'requests'],
   ])('blocks $batch with %s', (_name, body) => {
     expect(() => {

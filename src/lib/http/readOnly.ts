@@ -15,7 +15,10 @@ const batchBodySchema = z.object({
       }),
     )
     .min(1)
-    .max(GRAPH_BATCH_MAX),
+    .max(GRAPH_BATCH_MAX)
+    .refine((requests) => new Set(requests.map((r) => r.id)).size === requests.length, {
+      message: 'Sub-request ids must be unique.',
+    }),
 })
 
 export type HttpMethod = 'GET' | 'POST'

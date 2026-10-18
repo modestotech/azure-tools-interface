@@ -48,7 +48,11 @@ export interface HttpClient {
   getJsonOrNull(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown>
   /** GET a collection, following `nextLink` (ARM) / `@odata.nextLink` (Graph); returns all `value` items. */
   getAllPages(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown[]>
-  /** Graph `$batch` of GETs, chunked by 20. Sub-requests answering 429 are retried. Order is preserved. */
+  /**
+   * Graph `$batch` of GETs, chunked by 20. Sub-requests answering 429 are retried. Returns exactly one
+   * response per request, in request order. Ids must be unique; a response missing from Graph's answer
+   * is an `invalid-response` error, never silently dropped.
+   */
   batch(requests: readonly BatchRequest[], options?: RequestOptions): Promise<BatchResponse[]>
 }
 
@@ -329,8 +333,9 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
       }
       let wait = 0
       const retry: BatchRequest[] = []
+      const pendingById = new Map(pending.map((p) => [p.id, p]))
       for (const r of parsed.data.responses) {
-        const request = pending.find((p) => p.id === r.id)
+        const request = pendingById.get(r.id)
         if (!request) continue
         if (r.status === 429 && attempt < maxRetries) {
           retry.push(request)
@@ -339,13 +344,28 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
           results.set(r.id, { id: r.id, status: r.status, body: r.body })
         }
       }
+      const missing = pending.filter((p) => !results.has(p.id) && !retry.includes(p))
+      if (missing.length > 0) {
+        throw new HttpError(
+          'invalid-response',
+          'graph',
+          `$batch response is missing ${String(missing.length)} of ${String(pending.length)} sub-responses.`,
+        )
+      }
       pending = retry
       if (pending.length > 0) await sleep(Math.min(wait, MAX_RETRY_WAIT_MS), options.signal)
     }
-    return chunk.flatMap((r) => results.get(r.id) ?? [])
+    return chunk.map((r) => {
+      const response = results.get(r.id)
+      if (!response) throw new Error(`Unreachable: no $batch response for ${r.id}`)
+      return response
+    })
   }
 
   async function batch(requests: readonly BatchRequest[], options: RequestOptions = {}) {
+    if (new Set(requests.map((r) => r.id)).size !== requests.length) {
+      throw new HttpError('invalid-request', 'graph', '$batch request ids must be unique.')
+    }
     const chunks: BatchRequest[][] = []
     for (let i = 0; i < requests.length; i += GRAPH_BATCH_MAX) {
       chunks.push(requests.slice(i, i + GRAPH_BATCH_MAX))
