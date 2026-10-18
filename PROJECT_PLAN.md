@@ -79,6 +79,17 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - `sessionStore.test.ts` uses literal `https://management.azure.com` URLs; switch to `ARM` from `test/msw/handlers.ts`. `test/helpers/fakeJwt.ts` should take `aud` from `API_RESOURCES[api].resource`.
   - Enforce layering in `eslint.config.js` (`no-restricted-imports` per folder: `lib` imports nothing above it, `services` never imports `app`/`domain`/`views`, `domain` never imports `app`/`views`/`scripts`). Do this before M2 adds the first service files.
   - CSP: no milestone owned it. Now in M8 (below).
+- **Code quality review follow-ups (open, 2026-10-18), most severe first.** Fix them before M2 builds on the client:
+  - Validation failures after `send()` are logged as `ok`. `getAllPages` and `batchChunk` throw `invalid-response` (with no `url`/`status`) after the log entry has already finished. Pass the Zod schema into `send()` so the failure goes through `fail()`. Also show how many `$batch` sub-responses failed on the log line.
+  - Requests have no timeout. A hung `fetch` holds a limiter slot until the browser gives up. Combine the caller's signal with `AbortSignal.timeout(…)` and add an HttpError kind `timeout`. Queued limiter tasks should drop out when their signal aborts.
+  - `send()` (85 lines) handles the guards, logging, retries, body reading, error mapping and JSON parsing. Split it into `fetchWithRetry()` and `readResponse()`, which also removes the duplicated abort/network catch.
+  - `batchChunk`: extract a pure `partitionBatchResponses()`, comment the shared retry-budget rule, rename `r`/`p`/`retry`/`wait`, and treat unknown or duplicate response ids as `invalid-response` instead of skipping them.
+  - Renames:
+    - `HttpErrorKind 'http'` → `'unexpected-status'`
+    - `TokenClaims.aud` → `displayAudience`
+    - `upn` → `signInName`
+    - `TokenWarning` → `TokenIssue`
+    - An undecodable token should get its own error instead of `audience-mismatch`.
 
 **M2 — `services/` (raw layer, Zod-validated)**
 - Every ID put into a path (`sub`, `svc`, `apiId`, `opId`, `backendId` from policy XML, Graph `id`) goes through `encodePathSegment()`. Test: a policy with `backend-id="../../x"` gives a per-resource `invalid-request` error and sends nothing.

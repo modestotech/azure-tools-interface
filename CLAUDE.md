@@ -244,6 +244,10 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - Large tenants: virtualize long lists/tables, lazy-load group members. The one-API scope (see Project overview) keeps request volume bounded.
 - Errors are shown per resource, not as a global failure — a forbidden Graph call should not block the APIM view. Services return per-resource outcomes as `ResourceResult` (`settle()` in `services/result.ts`).
 - Tell HTTP errors apart by `kind` (`isHttpError(e, 'forbidden')`), never with `instanceof`.
+- The request log must match what the caller sees. If a response fails validation (Zod, paging or `$batch` shape), its log entry finishes as `error`, never `ok`, and the thrown `HttpError` carries the masked `url` and the `status`.
+- Every outbound request has a timeout and honors its `AbortSignal`, including while it waits in the limiter queue.
+- Keep functions to one job. Pure decisions (classifying responses, partitioning `$batch` results, choosing a retry delay) live in small named functions next to the I/O code, not inline in loops.
+- Name things after what they hold, not after the raw field they come from: a derived value doesn't reuse a JWT claim name (`aud`, `upn`), and an error kind says what went wrong (no catch-all `'http'`).
 - Unit-test the policy parser and mapper heavily using real-world-shaped XML fixtures in `src/test/fixtures/`. No live Azure calls in tests.
 - `tests/security/` must stay green: `noLeaks.test.ts` fails on network calls outside `lib/http/client.ts` and on any browser persistence; `build.test.ts` builds the production site and fails on a shipped service worker, external resources in `index.html`, or a URL origin not on its allowlist. Add an origin to `ALLOWED_ORIGINS` only with a reason, and never weaken these tests to make a change pass.
 - `public/mockServiceWorker.js` is for `pnpm dev:demo` only; a Vite plugin removes it from every other build.
