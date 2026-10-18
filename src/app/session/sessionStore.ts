@@ -40,7 +40,8 @@ export function useSession<T>(selector: (state: SessionState) => T): T {
   return useStore(sessionStore, selector)
 }
 
-export function tokenFor(state: SessionState, api: ApiKind): string | undefined {
+/** The entered token for `api`, or undefined when none is. No validation: the HTTP client does that. */
+export function sessionToken(state: SessionState, api: ApiKind): string | undefined {
   const token = api === 'arm' ? state.armToken : state.graphToken
   return token || undefined
 }

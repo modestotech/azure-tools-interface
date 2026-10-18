@@ -18,6 +18,14 @@ export interface TokenCheckInput {
   readonly now?: number
 }
 
+/**
+ * Problems that make a request pointless: Azure would answer 401. The HTTP client refuses to send
+ * with these; the rest (tenant mismatch, expiring soon) are only shown as warnings.
+ */
+export function isBlockingWarning(warning: TokenWarning): boolean {
+  return warning.kind === 'wrong-audience' || warning.kind === 'expired'
+}
+
 export function checkToken({
   api,
   claims,

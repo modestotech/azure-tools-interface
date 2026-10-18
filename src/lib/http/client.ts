@@ -1,5 +1,13 @@
 import { z } from 'zod'
-import { API_RESOURCES, decodeJwt, isExpectedAudience, type ApiKind } from '@/lib/token'
+import {
+  API_RESOURCES,
+  azTokenCommand,
+  checkToken,
+  decodeJwt,
+  isBlockingWarning,
+  type ApiKind,
+  type TokenClaims,
+} from '@/lib/token'
 import { ForbiddenError, HttpError, NotFoundError, UnauthorizedError } from './errors'
 import { createLimiter } from './limiter'
 import { maskText, type MaskValues } from './mask'
@@ -119,18 +127,43 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
 
   const mask = (text: string) => maskText(text, config.getMaskValues())
 
-  /** Rejects a missing token, or one for the wrong API, before any request is sent. */
-  function tokenFor(api: ApiKind): string {
+  // Decoded claims of the last token seen per API, so the JWT isn't decoded on every request.
+  const decodedCache = new Map<ApiKind, { token: string; claims: TokenClaims | undefined }>()
+
+  function claimsOf(api: ApiKind, token: string): TokenClaims | undefined {
+    const cached = decodedCache.get(api)
+    if (cached?.token === token) return cached.claims
+    const decoded = decodeJwt(token)
+    const claims = decoded.ok ? decoded.claims : undefined
+    decodedCache.set(api, { token, claims })
+    return claims
+  }
+
+  /**
+   * Returns the token for `api`, or throws before anything is sent when it's missing, for the wrong
+   * API, or expired. Uses the same checks as the token screen (`checkToken`); warnings that don't
+   * make Azure reject the call (tenant mismatch, expiring soon) don't block.
+   */
+  function requireValidToken(api: ApiKind): string {
     const token = config.getToken(api)
     if (!token) {
       throw new HttpError('no-token', api, `No ${api.toUpperCase()} token entered.`)
     }
-    const decoded = decodeJwt(token)
-    if (!decoded.ok || !isExpectedAudience(api, decoded.claims.aud)) {
+    const claims = claimsOf(api, token)
+    const blocking = claims ? checkToken({ api, claims }).find(isBlockingWarning) : undefined
+    if (!claims || blocking?.kind === 'wrong-audience') {
       throw new HttpError(
         'audience-mismatch',
         api,
         `The ${api.toUpperCase()} token is not valid for ${API_RESOURCES[api].resource}. Paste a token from the ${api.toUpperCase()} az command.`,
+      )
+    }
+    if (blocking?.kind === 'expired') {
+      const command = azTokenCommand(api, config.getMaskValues().tenantId)
+      throw new HttpError(
+        'token-expired',
+        api,
+        `The ${api.toUpperCase()} token has expired. Get a new one with: ${mask(command)}`,
       )
     }
     return token
@@ -231,7 +264,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
   ): Promise<SendResult> {
     assertReadOnly(api, method, url, body)
     assertHost(api, url)
-    const token = tokenFor(api)
+    const token = requireValidToken(api)
     const maskedUrl = mask(url)
     const budget = extra.retryBudget ?? { left: maxRetries }
 

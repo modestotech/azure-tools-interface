@@ -11,6 +11,7 @@ export type HttpErrorKind =
   | 'invalid-response'
   | 'no-token'
   | 'audience-mismatch'
+  | 'token-expired'
   | 'read-only-violation'
   | 'disallowed-host'
 

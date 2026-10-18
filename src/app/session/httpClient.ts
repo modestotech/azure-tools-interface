@@ -1,5 +1,5 @@
 import { createHttpClient, requestLogStore } from '@/lib/http'
-import { sessionStore, tokenFor } from './sessionStore'
+import { sessionStore, sessionToken } from './sessionStore'
 
 /**
  * The app's single HTTP client, wired to the in-memory session and the request log.
@@ -9,7 +9,7 @@ import { sessionStore, tokenFor } from './sessionStore'
  * and the app shell passes this instance in. Tests pass their own client.
  */
 export const httpClient = createHttpClient({
-  getToken: (api) => tokenFor(sessionStore.getState(), api),
+  getToken: (api) => sessionToken(sessionStore.getState(), api),
   getMaskValues: () => {
     const { subscriptionId, tenantId } = sessionStore.getState()
     return { subscriptionId, tenantId }

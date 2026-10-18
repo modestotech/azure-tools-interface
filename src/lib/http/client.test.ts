@@ -142,6 +142,25 @@ describe('createHttpClient', () => {
     expect(error.kind).toBe('forbidden')
   })
 
+  it('refuses an expired token before sending anything, with the az command to copy', async () => {
+    const expired = armToken({ exp: Math.floor(Date.now() / 1000) - 60 })
+    const { client, log } = setup({ getToken: () => expired })
+    const error = await caught(client.getJson('arm', SVC_URL))
+    expect(error.kind).toBe('token-expired')
+    expect(error.message).toContain(
+      'az account get-access-token --resource https://management.azure.com --tenant {tid}',
+    )
+    expect(log.getState().entries).toHaveLength(0)
+  })
+
+  it('does not block on a tenant mismatch; that is only a warning on the token screen', async () => {
+    server.use(http.get(`${ARM}/x`, () => HttpResponse.json({})))
+    const other = armToken({ tid: '00000000-0000-0000-0000-0000000000ff' })
+    await expect(
+      setup({ getToken: () => other }).client.getJson('arm', `${ARM}/x`),
+    ).resolves.toEqual({})
+  })
+
   it('honours Retry-After on 429 and then succeeds', async () => {
     let calls = 0
     server.use(
