@@ -15,7 +15,7 @@ import {
   unauthorizedError,
 } from './errors'
 import { createLimiter } from './limiter'
-import { maskText, type MaskValues } from './mask'
+import { clearMaskCache, maskText, type MaskValues } from './mask'
 import { assertReadOnly, GRAPH_BATCH_MAX, GRAPH_BATCH_URL, type HttpMethod } from './readOnly'
 import type { RequestLogger } from './requestLog'
 import { defaultSleep, isRetryableStatus, retryDelayMs, type RetryBudget } from './retry'
@@ -70,7 +70,7 @@ export interface HttpClient {
    * is an `invalid-response` error, never silently dropped.
    */
   batch(requests: readonly BatchRequest[], options?: RequestOptions): Promise<BatchResponse[]>
-  /** Forgets anything derived from tokens (the decoded-claims cache). Called by "Clear session". */
+  /** Forgets anything derived from the session (decoded claims, cached mask IDs). Called by "Clear session". */
   reset(): void
 }
 
@@ -429,6 +429,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
 
   function reset() {
     decodedCache.clear()
+    clearMaskCache()
   }
 
   return { getJson, getJsonOrNull, getAllPages, batch, reset }

@@ -33,11 +33,11 @@ export function checkToken({
   now = Date.now(),
 }: TokenCheckInput): TokenWarning[] {
   const warnings: TokenWarning[] = []
-  if (!isExpectedAudience(api, claims.aud)) {
+  if (!claims.audiences.some((aud) => isExpectedAudience(api, aud))) {
     warnings.push({
       kind: 'wrong-audience',
       expected: API_RESOURCES[api].resource,
-      actual: claims.aud,
+      actual: claims.audiences.join(', ') || '(none)',
     })
   }
   const expected = tenantId?.trim().toLowerCase()

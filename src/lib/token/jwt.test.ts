@@ -44,6 +44,12 @@ describe('decodeJwt', () => {
     }
   })
 
+  it('keeps every audience when aud is an array', () => {
+    const result = decodeJwt(fakeJwt({ aud: ['x', 'https://graph.microsoft.com'], exp: 1 }))
+    expect(result.ok && result.claims.audiences).toEqual(['x', 'https://graph.microsoft.com'])
+    expect(result.ok && result.claims.aud).toBe('x')
+  })
+
   it('rejects payloads without aud or exp', () => {
     expect(decodeJwt(fakeJwt({ tid: TEST_TENANT })).ok).toBe(false)
   })

@@ -18,6 +18,13 @@ describe('checkToken', () => {
     ).toEqual([])
   })
 
+  it('accepts a token whose aud array contains the expected audience', () => {
+    const multi = claims(
+      armToken({ aud: ['https://other.example.net', 'https://management.azure.com'] }),
+    )
+    expect(checkToken({ api: 'arm', claims: multi, now })).toEqual([])
+  })
+
   it('flags a Graph token pasted into the ARM field', () => {
     const warnings = checkToken({ api: 'arm', claims: claims(graphToken()), now })
     expect(warnings).toContainEqual(
