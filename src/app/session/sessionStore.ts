@@ -7,9 +7,13 @@ import { normalizeToken, type ApiKind } from '@/lib/token'
  * Reloading or closing the tab erases them.
  */
 export interface SessionState {
-  readonly armToken: string
-  readonly graphToken: string
+  /** One token per API; `''` when none is entered. */
+  readonly tokens: Readonly<Record<ApiKind, string>>
   readonly tenantId: string
+  /**
+   * Selected subscription, used to mask URLs as `{sub}`. Stays here until the M4 selection store
+   * exists; then decide whether it moves there with the APIM instance and API.
+   */
   readonly subscriptionId: string
   setToken(api: ApiKind, raw: string): void
   setTenantId(tenantId: string): void
@@ -17,13 +21,16 @@ export interface SessionState {
   reset(): void
 }
 
-const EMPTY = { armToken: '', graphToken: '', tenantId: '', subscriptionId: '' } as const
+const EMPTY: Pick<SessionState, 'tokens' | 'tenantId' | 'subscriptionId'> = {
+  tokens: { arm: '', graph: '' },
+  tenantId: '',
+  subscriptionId: '',
+}
 
 export const sessionStore = createStore<SessionState>()((set) => ({
   ...EMPTY,
   setToken(api, raw) {
-    const token = normalizeToken(raw)
-    set(api === 'arm' ? { armToken: token } : { graphToken: token })
+    set((state) => ({ tokens: { ...state.tokens, [api]: normalizeToken(raw) } }))
   },
   setTenantId(tenantId) {
     set({ tenantId: tenantId.trim() })
@@ -40,7 +47,7 @@ export function useSession<T>(selector: (state: SessionState) => T): T {
   return useStore(sessionStore, selector)
 }
 
-export function tokenFor(state: SessionState, api: ApiKind): string | undefined {
-  const token = api === 'arm' ? state.armToken : state.graphToken
-  return token || undefined
+/** The entered token for `api`, or undefined when none is. No validation: the HTTP client does that. */
+export function sessionToken(state: SessionState, api: ApiKind): string | undefined {
+  return state.tokens[api] || undefined
 }

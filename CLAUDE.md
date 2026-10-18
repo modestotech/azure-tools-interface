@@ -30,7 +30,11 @@ Raw samples go in `samples-raw/` (gitignored except its README). Read them from 
 
 ### Git
 
-Don't commit any code before consulting me.
+Don't commit any code before consulting me. Commit messages: a short title, then a body explaining why and what. One commit per logical change.
+
+### Documentation
+
+`CLAUDE.md` holds the rules and conventions. `PROJECT_PLAN.md` holds milestones and status. `README.md` is the short intro. `TECH_DEBT_PLAN_M1.md` records the M1 refactor. When a rule changes, update `CLAUDE.md` and refer to it rather than repeating it elsewhere.
 
 ## Authentication model
 
@@ -49,8 +53,11 @@ az account get-access-token --resource https://graph.microsoft.com --tenant <TEN
 Rules:
 - Tokens, the selected subscription ID and tenant ID are held **in memory only** (React state / store). Never write them to `localStorage`, `sessionStorage`, cookies, URLs, logs or error messages.
 - The on-screen request log shows URLs with the subscription ID and tenant ID masked as `{sub}` / `{tid}` by default. An in-memory "reveal" toggle may unmask them. Tokens are never shown, and log exports are always masked.
+- Log exports go through an allowlist (`EXPORTED_FIELDS` in `lib/http/requestLog.ts`). A new log field is exported only if it's added there on purpose.
+- Anything that holds session data (query cache, stores, view state) registers with `onClearSession()` (`app/session/clearSession.ts`), so "Clear session" wipes it.
 - Decode the JWT (no validation needed) to show `aud`, `tid`, `upn`/`oid` and `exp`. Warn if `aud` doesn't match the expected resource, if `tid` doesn't match the entered tenant, or if the token expires soon (they typically last ~60–90 min).
-- On 401, surface a clear "token expired or wrong audience — re-run az command" message with the exact command to copy.
+- The HTTP client refuses to send when the token is missing, for the wrong audience, or expired (`token-expired`, with the az command). A tenant mismatch or a token about to expire is only a warning on the token screen.
+- On 401, surface a clear "token expired or wrong audience — re-run az command" message with the exact command to copy (`HttpError.azCommand`).
 - The app is strictly **read-only**: only `GET` requests (plus Graph `$batch`, which wraps GETs). Never add calls that modify Azure or Entra.
 
 Required permissions for the signed-in user: `Reader` (or `API Management Service Reader Role`) on the APIM instance; directory read access in Entra (the default Azure CLI Graph token works for reading service principals, groups and members in most tenants).
@@ -97,11 +104,20 @@ Run `pnpm typecheck && pnpm lint && pnpm test` before considering a task done.
 ```
 src/
   app/                 # shell, routing, layout, session/token input screen
+    session/           # sessionStore.ts, httpClient.ts (the app's client), clearSession.ts
   lib/
-    http/              # fetch wrapper: auth header, paging (nextLink / @odata.nextLink), 429 retry-after, errors
-    token/             # JWT decode, audience/tenant/expiry checks
+    http/              # HTTP client: auth header, guards, paging, retries, request log
+      client.ts        #   createHttpClient (getJson, getJsonOrNull, getAllPages, batch, reset)
+      retry.ts         #   429/503 rules, Retry-After, backoff
+      odata.ts         #   odataString / withQuery for Graph query strings
+      mask.ts          #   {sub} / {tid} / {token} masking
+      requestLog.ts    #   in-memory log store behind the Matrix log
+      errors.ts        #   HttpError (discriminated by `kind`) and factories
+    token/             # JWT decode, audience/tenant/expiry checks, API endpoints (resources.ts)
   services/
-    arm/               # APIM ARM calls (raw API layer, typed + Zod-validated)
+    queryKeys.ts       # every TanStack Query key
+    result.ts          # ResourceResult (ok / empty / forbidden / error), settle()
+    arm/               # APIM ARM calls (raw API layer, typed + Zod-validated); apiVersion.ts
     graph/             # Microsoft Graph calls (raw API layer)
   domain/
     model.ts           # normalized domain types (see below)
@@ -115,9 +131,18 @@ src/
   scripts/             # read-only analyses, registered in scripts/registry.ts
   components/          # shared UI
   test/                # fixtures (sample policy XML, ARM/Graph JSON) and MSW handlers
+tests/
+  security/            # Node-side guards: source scan for network/storage use, production-build checks
 ```
 
 Layering is one-way: `views` / `scripts` → `domain` → `services` → `lib`. Views never call fetch directly and never parse raw ARM/Graph shapes; they consume the normalized domain model.
+
+Services take an `HttpClient` as a parameter and never import from `app/`. The single instance lives in `app/session/httpClient.ts` and is passed in by the app shell; tests pass their own.
+
+Guidelines for the layers still to be built (from `TECH_DEBT_PLAN_M1.md`):
+- **Policy parser:** wrap fast-xml-parser's ordered output in a typed tree helper before writing extractors. Keep the supported / response-only / unresolved element lists in one data table. Apply `<base />` composition through one function for all four sections.
+- **Findings:** computed once in `domain/` (no auth, HTTP backend, no outbound auth, unresolved rules, …). Scripts filter or present them and never re-implement the checks. Keep `buildAccessModel()` pure and separate from the fetching in `useAccessModel()`.
+- **Views:** registry entries are lazy-loaded (`React.lazy`), because React Flow, elkjs and ECharts are heavy. The CSP is defined once and used for both the `<meta>` tag and `staticwebapp.config.json`.
 
 ### Extensibility (views and scripts)
 
@@ -131,7 +156,7 @@ New visualizations and analyses plug in through registries, not by editing the a
 
 ### APIM (ARM, `https://management.azure.com`)
 
-Pin a GA `api-version` for `Microsoft.ApiManagement` in one constant (verify the latest GA version when setting it up). Resources to fetch:
+Base URLs come only from `API_RESOURCES[api].baseUrl` (`lib/token/resources.ts`). Every ARM api-version lives in `services/arm/apiVersion.ts` (`APIM_API_VERSION`, `SUBSCRIPTIONS_API_VERSION`; per-provider versions for `GET {resourceId}` are added there, verified first). Never hard-code hosts or versions elsewhere, tests included. Resources to fetch:
 
 - Subscriptions the user can access (for the picker): `/subscriptions?api-version=2022-12-01` (Microsoft.Resources, not the APIM api-version)
 - APIM services in the subscription (for the picker): `/subscriptions/{sub}/providers/Microsoft.ApiManagement/service`
@@ -147,7 +172,7 @@ Pin a GA `api-version` for `Microsoft.ApiManagement` in one constant (verify the
 - The APIM service's `identity`, especially `userAssignedIdentities` (`clientId` → `principalId`), for outbound managed-identity auth
 - Optionally, `GET {resourceId}` (with the matching provider `api-version`) to show the backend resource's kind, location and hostname; tolerate 403/404 since the user may lack access
 
-A 404 on a policy endpoint means "no policy at that scope" — not an error.
+A 404 on a policy endpoint means "no policy at that scope". Fetch those with `getJsonOrNull`, which returns `null` and logs the request as `empty`. Don't catch the 404 by hand.
 
 ### Entra (Microsoft Graph, `https://graph.microsoft.com/v1.0`)
 
@@ -157,6 +182,7 @@ A 404 on a policy endpoint means "no policy at that scope" — not an error.
 - Group details and direct members only: `/groups/{id}`, `/groups/{id}/members`. Do not fetch `transitiveMembers` and do not expand nested groups — members of nested groups don't receive app roles assigned to the parent group.
 - APIM's user-assigned managed identity as a service principal: `/servicePrincipals/{principalId}` and its outbound permissions via `/servicePrincipals/{principalId}/appRoleAssignments`
 - Target of `authentication-managed-identity`: resolve the `resource` audience to a service principal with `/servicePrincipals?$filter=servicePrincipalNames/any(x:x eq '{resource}')`
+- Values in `$filter` come from policy XML. Always build them with `odataString()` and `withQuery()` from `lib/http/odata.ts`, never by string interpolation.
 - Use `$select` to keep payloads small, `$batch` (max 20 requests per batch) for bulk lookups, follow `@odata.nextLink`, and honor `Retry-After` on 429.
 
 ## Policy parsing rules
@@ -210,16 +236,21 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 
 - TypeScript strict, no `any`; validate external responses with Zod in `services/`.
 - Functional React components and hooks; keep components presentational and logic in hooks/domain.
-- All data loading through TanStack Query with stable query keys (`['arm', sub, svc, 'apis']`, `['graph', 'sp', appId]`, ...).
+- All data loading through TanStack Query. All query keys come from `services/queryKeys.ts`; never write key arrays inline.
 - Large tenants: virtualize long lists/tables, lazy-load group members. The one-API scope (see Project overview) keeps request volume bounded.
-- Errors are shown per resource, not as a global failure — a forbidden Graph call should not block the APIM view.
+- Errors are shown per resource, not as a global failure — a forbidden Graph call should not block the APIM view. Services return per-resource outcomes as `ResourceResult` (`settle()` in `services/result.ts`).
+- Tell HTTP errors apart by `kind` (`isHttpError(e, 'forbidden')`), never with `instanceof`.
 - Unit-test the policy parser and mapper heavily using real-world-shaped XML fixtures in `src/test/fixtures/`. No live Azure calls in tests.
+- `tests/security/` must stay green: `noLeaks.test.ts` fails on network calls outside `lib/http/client.ts` and on any browser persistence; `build.test.ts` builds the production site and fails on a shipped service worker, external resources in `index.html`, or a URL origin not on its allowlist. Add an origin to `ALLOWED_ORIGINS` only with a reason, and never weaken these tests to make a change pass.
+- `public/mockServiceWorker.js` is for `pnpm dev:demo` only; a Vite plugin removes it from every other build.
+- Tests run in two Vitest projects: `dom` (jsdom) for `.tsx` tests and `src/app/`, `node` for everything else. Put new tests that need browser APIs under `src/app/` or in a `.tsx` file.
+- `src/test/setup.ts` calls `clearSession()` after every test. In tests, use `ARM` / `GRAPH` from `test/msw/handlers.ts` and `APIM_API_VERSION` instead of literal URLs and versions.
 - Never commit real tokens, tenant IDs, subscription IDs, policy XML or exports from a real tenant. Fixtures must be anonymized.
 
 ## Known gotchas
 
 - Calling ARM and Graph from the browser relies on their CORS support. If a call is blocked by CORS during development, use a Vite dev-server proxy rather than adding a backend, and document it here.
-- An ARM token cannot call Graph and vice versa — check `aud` before every request batch.
+- An ARM token cannot call Graph and vice versa. The HTTP client checks `aud` before every request; don't bypass it.
 - When an app role is assigned to a group, list the group's **direct members only**. Filter out any member that is itself a group (`@odata.type` `#microsoft.graph.group`) — nested groups are not shown at all.
   - **User member** → effective: the role appears in the user's token.
   - **Service principal / managed identity member** → *not* effective: an app calling with its own identity only gets roles assigned directly to its service principal; group membership gives it nothing. Show it greyed out with a short explanation rather than hiding it, since it's usually a misconfiguration.

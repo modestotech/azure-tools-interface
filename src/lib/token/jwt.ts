@@ -15,7 +15,10 @@ const claimsSchema = z.looseObject({
 })
 
 export interface TokenClaims {
+  /** First audience, for display. A token's `aud` is usually a single string. */
   readonly aud: string
+  /** Every audience in the token (`aud` may be an array). Audience checks use this. */
+  readonly audiences: readonly string[]
   readonly tid: string | undefined
   readonly oid: string | undefined
   /** Best available sign-in name: `upn`, then `unique_name`, then `preferred_username`. */
@@ -66,10 +69,12 @@ export function decodeJwt(raw: string): DecodeResult {
     return { ok: false, error: 'Token payload is missing required claims (aud, exp).' }
   }
   const c = parsed.data
+  const audiences = Array.isArray(c.aud) ? c.aud : [c.aud]
   return {
     ok: true,
     claims: {
-      aud: Array.isArray(c.aud) ? (c.aud[0] ?? '') : c.aud,
+      aud: audiences[0] ?? '',
+      audiences,
       tid: c.tid,
       oid: c.oid,
       upn: c.upn ?? c.unique_name ?? c.preferred_username,

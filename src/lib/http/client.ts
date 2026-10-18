@@ -1,10 +1,26 @@
 import { z } from 'zod'
-import { API_RESOURCES, decodeJwt, isExpectedAudience, type ApiKind } from '@/lib/token'
-import { ForbiddenError, HttpError, NotFoundError, UnauthorizedError } from './errors'
+import {
+  API_RESOURCES,
+  checkToken,
+  decodeJwt,
+  isBlockingWarning,
+  type ApiKind,
+  type TokenClaims,
+} from '@/lib/token'
+import {
+  forbiddenError,
+  HttpError,
+  notFoundError,
+  tokenExpiredError,
+  unauthorizedError,
+} from './errors'
 import { createLimiter } from './limiter'
-import { maskText, type MaskValues } from './mask'
+import { clearMaskCache, maskText, type MaskValues } from './mask'
 import { assertReadOnly, GRAPH_BATCH_MAX, GRAPH_BATCH_URL, type HttpMethod } from './readOnly'
 import type { RequestLogger } from './requestLog'
+import { defaultSleep, isRetryableStatus, retryDelayMs, type RetryBudget } from './retry'
+
+export { parseRetryAfter } from './retry'
 
 export interface HttpClientConfig {
   /** Current token for the API, or undefined when none is entered. Read on every request. */
@@ -15,7 +31,7 @@ export interface HttpClientConfig {
   fetch?: typeof fetch
   /** Requests in flight across both APIs. Default 8. */
   maxConcurrency?: number
-  /** Retries on 429 / 503. Default 3. */
+  /** Retries on 429 / 503 per request (a `$batch` chunk shares one budget). Default 3. */
   maxRetries?: number
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
 }
@@ -28,7 +44,7 @@ export interface RequestOptions {
 
 export interface BatchRequest {
   readonly id: string
-  /** Path relative to `https://graph.microsoft.com/v1.0`, starting with `/`. */
+  /** Path relative to the Graph `baseUrl` (`/v1.0`), starting with `/`. */
   readonly url: string
 }
 
@@ -41,14 +57,24 @@ export interface BatchResponse {
 export interface HttpClient {
   /** GET one resource; returns parsed JSON. Validate it with Zod in `services/`. */
   getJson(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown>
+  /**
+   * Like `getJson`, but a 404 resolves to `null` and is logged as `empty`, not as an error.
+   * For resources whose absence is a normal answer, e.g. "no policy at that scope".
+   */
+  getJsonOrNull(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown>
   /** GET a collection, following `nextLink` (ARM) / `@odata.nextLink` (Graph); returns all `value` items. */
   getAllPages(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown[]>
-  /** Graph `$batch` of GETs, chunked by 20. Sub-requests answering 429 are retried. Order is preserved. */
+  /**
+   * Graph `$batch` of GETs, chunked by 20. Sub-requests answering 429 / 503 are retried. Returns exactly one
+   * response per request, in request order. Ids must be unique; a response missing from Graph's answer
+   * is an `invalid-response` error, never silently dropped.
+   */
   batch(requests: readonly BatchRequest[], options?: RequestOptions): Promise<BatchResponse[]>
+  /** Forgets anything derived from the session (decoded claims, cached mask IDs). Called by "Clear session". */
+  reset(): void
 }
 
 const MAX_PAGES = 1000
-const MAX_RETRY_WAIT_MS = 60_000
 
 const pageSchema = z.looseObject({
   value: z.array(z.unknown()),
@@ -71,42 +97,17 @@ const errorBodySchema = z.looseObject({
   error: z.looseObject({ code: z.string().optional(), message: z.string().optional() }),
 })
 
-function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason as Error)
-      return
-    }
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(signal.reason as Error)
-      },
-      { once: true },
-    )
-  })
-}
-
-/** Retry-After is either delta-seconds or an HTTP date. */
-export function parseRetryAfter(
-  value: string | null | undefined,
-  now = Date.now(),
-): number | undefined {
-  if (!value) return undefined
-  const seconds = Number(value)
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000)
-  const date = Date.parse(value)
-  return Number.isNaN(date) ? undefined : Math.max(0, date - now)
-}
-
-function backoffMs(attempt: number): number {
-  return Math.min(1000 * 2 ** attempt, MAX_RETRY_WAIT_MS)
-}
-
 function isAbort(error: unknown, signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true || (error instanceof Error && error.name === 'AbortError')
+}
+
+/** Case-insensitive lookup in a `$batch` sub-response's plain headers object. */
+function headerValue(
+  headers: Record<string, string> | undefined,
+  name: string,
+): string | undefined {
+  const lower = name.toLowerCase()
+  return Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === lower)?.[1]
 }
 
 function errorDetail(status: number, statusText: string, text: string): string {
@@ -133,19 +134,39 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
 
   const mask = (text: string) => maskText(text, config.getMaskValues())
 
-  /** Rejects a missing token, or one for the wrong API, before any request is sent. */
-  function tokenFor(api: ApiKind): string {
+  // Decoded claims of the last token seen per API, so the JWT isn't decoded on every request.
+  const decodedCache = new Map<ApiKind, { token: string; claims: TokenClaims | undefined }>()
+
+  function claimsOf(api: ApiKind, token: string): TokenClaims | undefined {
+    const cached = decodedCache.get(api)
+    if (cached?.token === token) return cached.claims
+    const decoded = decodeJwt(token)
+    const claims = decoded.ok ? decoded.claims : undefined
+    decodedCache.set(api, { token, claims })
+    return claims
+  }
+
+  /**
+   * Returns the token for `api`, or throws before anything is sent when it's missing, for the wrong
+   * API, or expired. Uses the same checks as the token screen (`checkToken`); warnings that don't
+   * make Azure reject the call (tenant mismatch, expiring soon) don't block.
+   */
+  function requireValidToken(api: ApiKind): string {
     const token = config.getToken(api)
     if (!token) {
-      throw new HttpError('no-token', api, `No ${api.toUpperCase()} token entered.`)
+      throw new HttpError('no-token', api, `No ${API_RESOURCES[api].label} token entered.`)
     }
-    const decoded = decodeJwt(token)
-    if (!decoded.ok || !isExpectedAudience(api, decoded.claims.aud)) {
+    const claims = claimsOf(api, token)
+    const blocking = claims ? checkToken({ api, claims }).find(isBlockingWarning) : undefined
+    if (!claims || blocking?.kind === 'wrong-audience') {
       throw new HttpError(
         'audience-mismatch',
         api,
-        `The ${api.toUpperCase()} token is not valid for ${API_RESOURCES[api].resource}. Paste a token from the ${api.toUpperCase()} az command.`,
+        `The ${API_RESOURCES[api].label} token is not valid for ${API_RESOURCES[api].resource}. Paste a token from the ${API_RESOURCES[api].label} az command.`,
       )
+    }
+    if (blocking?.kind === 'expired') {
+      throw tokenExpiredError(api, config.getMaskValues().tenantId)
     }
     return token
   }
@@ -161,30 +182,100 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
       throw new HttpError(
         'disallowed-host',
         api,
-        `Blocked request to ${mask(url)}: ${api.toUpperCase()} requests must go to ${API_RESOURCES[api].origin}.`,
+        `Blocked request to ${mask(url)}: ${API_RESOURCES[api].label} requests must go to ${API_RESOURCES[api].origin}.`,
       )
     }
   }
 
+  interface SendExtra {
+    /** Extra text for the log line, e.g. `$batch ×12`. */
+    label?: string
+    /** Resolve a 404 to `null` and log it as `empty` instead of failing. */
+    notFoundIsEmpty?: boolean
+    /** Shared retry budget; defaults to a fresh one with `maxRetries`. */
+    retryBudget?: RetryBudget
+  }
+
+  interface SendResult {
+    json: unknown
+    headers: Headers
+  }
+
+  function fetchOnce(
+    method: HttpMethod,
+    url: string,
+    token: string,
+    body: unknown,
+    signal: AbortSignal | undefined,
+  ): Promise<Response> {
+    return limiter.run(() =>
+      fetchImpl(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        body: body === undefined ? null : JSON.stringify(body),
+        signal: signal ?? null,
+      }),
+    )
+  }
+
+  /** Maps a non-OK response (after retries) to the matching typed error. */
+  function toHttpError(api: ApiKind, response: Response, text: string, maskedUrl: string) {
+    const detail = mask(errorDetail(response.status, response.statusText, text))
+    switch (response.status) {
+      case 401:
+        return unauthorizedError(api, maskedUrl, config.getMaskValues().tenantId, detail)
+      case 403:
+        return forbiddenError(api, maskedUrl, detail)
+      case 404:
+        return notFoundError(api, maskedUrl, detail)
+      default:
+        return new HttpError(
+          isRetryableStatus(response.status) ? 'throttled' : 'http',
+          api,
+          detail,
+          {
+            status: response.status,
+            url: maskedUrl,
+          },
+        )
+    }
+  }
+
+  function networkError(api: ApiKind, maskedUrl: string): HttpError {
+    // fetch() rejects with a TypeError on network failures, including CORS blocks.
+    return new HttpError(
+      'network',
+      api,
+      `Network error calling ${maskedUrl}. Check the connection; if it persists, the call may be blocked by CORS.`,
+      { url: maskedUrl },
+    )
+  }
+
+  /** Guards, logs and sends one request, retrying 429 / 503 within the budget. */
   async function send(
     api: ApiKind,
     method: HttpMethod,
     url: string,
     body: unknown,
     options: RequestOptions,
-    label?: string,
-  ): Promise<{ json: unknown; headers: Headers }> {
+    extra: SendExtra = {},
+  ): Promise<SendResult> {
     assertReadOnly(api, method, url, body)
     assertHost(api, url)
-    const token = tokenFor(api)
+    const token = requireValidToken(api)
     const maskedUrl = mask(url)
+    const budget = extra.retryBudget ?? { left: maxRetries }
 
     const id = logger.start({
       api,
       method,
       url: maskedUrl,
       rawUrl: url,
-      label,
+      label: extra.label,
       queryKey: options.queryKey ? mask(JSON.stringify(options.queryKey)) : undefined,
     })
 
@@ -193,92 +284,65 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
       throw error
     }
 
+    let response: Response
     try {
       for (let attempt = 0; ; attempt++) {
-        const response = await limiter.run(() =>
-          fetchImpl(url, {
-            method,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: 'application/json',
-              ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-            },
-            body: body === undefined ? null : JSON.stringify(body),
-            signal: options.signal ?? null,
-          }),
-        )
-
-        const throttled = response.status === 429 || response.status === 503
-        if (throttled && attempt < maxRetries) {
-          const wait = parseRetryAfter(response.headers.get('Retry-After')) ?? backoffMs(attempt)
-          logger.retry(id, response.status)
-          await sleep(Math.min(wait, MAX_RETRY_WAIT_MS), options.signal)
-          continue
-        }
-
-        const text = await response.text()
-        const bytes = new TextEncoder().encode(text).byteLength
-
-        if (!response.ok) {
-          const detail = mask(errorDetail(response.status, response.statusText, text))
-          const { tenantId } = config.getMaskValues()
-          switch (response.status) {
-            case 401:
-              return fail(new UnauthorizedError(api, maskedUrl, tenantId, detail), 401, bytes)
-            case 403:
-              return fail(new ForbiddenError(api, maskedUrl, detail), 403, bytes)
-            case 404:
-              return fail(new NotFoundError(api, maskedUrl, detail), 404, bytes)
-            default:
-              return fail(
-                new HttpError(throttled ? 'throttled' : 'http', api, detail, {
-                  status: response.status,
-                  url: maskedUrl,
-                }),
-                response.status,
-                bytes,
-              )
-          }
-        }
-
-        let json: unknown = null
-        if (text) {
-          try {
-            json = JSON.parse(text)
-          } catch {
-            return fail(
-              new HttpError('invalid-response', api, 'Response was not valid JSON.', {
-                status: response.status,
-                url: maskedUrl,
-              }),
-              response.status,
-              bytes,
-            )
-          }
-        }
-        logger.finish(id, { state: 'ok', status: response.status, bytes })
-        return { json, headers: response.headers }
+        response = await fetchOnce(method, url, token, body, options.signal)
+        if (!isRetryableStatus(response.status) || budget.left <= 0) break
+        budget.left--
+        logger.retry(id, response.status)
+        await sleep(retryDelayMs(response.headers.get('Retry-After'), attempt), options.signal)
       }
     } catch (error) {
-      if (error instanceof HttpError) throw error
       if (isAbort(error, options.signal)) {
         logger.finish(id, { state: 'cancelled' })
         throw error
       }
-      // fetch() rejects with a TypeError on network failures, including CORS blocks.
-      return fail(
-        new HttpError(
-          'network',
-          api,
-          `Network error calling ${maskedUrl}. Check the connection; if it persists, the call may be blocked by CORS.`,
-          { url: maskedUrl },
-        ),
-      )
+      return fail(networkError(api, maskedUrl))
     }
+
+    let text: string
+    try {
+      text = await response.text()
+    } catch (error) {
+      if (isAbort(error, options.signal)) {
+        logger.finish(id, { state: 'cancelled' })
+        throw error
+      }
+      return fail(networkError(api, maskedUrl), response.status)
+    }
+    const bytes = new TextEncoder().encode(text).byteLength
+
+    if (response.status === 404 && extra.notFoundIsEmpty) {
+      logger.finish(id, { state: 'empty', status: 404, bytes })
+      return { json: null, headers: response.headers }
+    }
+    if (!response.ok) {
+      return fail(toHttpError(api, response, text, maskedUrl), response.status, bytes)
+    }
+
+    let json: unknown = null
+    if (text) {
+      try {
+        json = JSON.parse(text)
+      } catch {
+        const error = new HttpError('invalid-response', api, 'Response was not valid JSON.', {
+          status: response.status,
+          url: maskedUrl,
+        })
+        return fail(error, response.status, bytes)
+      }
+    }
+    logger.finish(id, { state: 'ok', status: response.status, bytes })
+    return { json, headers: response.headers }
   }
 
   async function getJson(api: ApiKind, url: string, options: RequestOptions = {}) {
     return (await send(api, 'GET', url, undefined, options)).json
+  }
+
+  async function getJsonOrNull(api: ApiKind, url: string, options: RequestOptions = {}) {
+    return (await send(api, 'GET', url, undefined, options, { notFoundIsEmpty: true })).json
   }
 
   async function getAllPages(api: ApiKind, url: string, options: RequestOptions = {}) {
@@ -304,34 +368,57 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     options: RequestOptions,
   ): Promise<BatchResponse[]> {
     const results = new Map<string, BatchResponse>()
+    const retryBudget: RetryBudget = { left: maxRetries }
     let pending = chunk
     for (let attempt = 0; pending.length > 0; attempt++) {
       const body = { requests: pending.map((r) => ({ id: r.id, method: 'GET', url: r.url })) }
       const label = `$batch ×${String(pending.length)}`
-      const { json } = await send('graph', 'POST', GRAPH_BATCH_URL, body, options, label)
+      const { json } = await send('graph', 'POST', GRAPH_BATCH_URL, body, options, {
+        label,
+        retryBudget,
+      })
       const parsed = batchResponseSchema.safeParse(json)
       if (!parsed.success) {
         throw new HttpError('invalid-response', 'graph', 'Unexpected $batch response shape.')
       }
       let wait = 0
       const retry: BatchRequest[] = []
+      const pendingById = new Map(pending.map((p) => [p.id, p]))
       for (const r of parsed.data.responses) {
-        const request = pending.find((p) => p.id === r.id)
+        const request = pendingById.get(r.id)
         if (!request) continue
-        if (r.status === 429 && attempt < maxRetries) {
+        if (isRetryableStatus(r.status) && retryBudget.left > 0) {
           retry.push(request)
-          wait = Math.max(wait, parseRetryAfter(r.headers?.['Retry-After']) ?? backoffMs(attempt))
+          wait = Math.max(wait, retryDelayMs(headerValue(r.headers, 'Retry-After'), attempt))
         } else {
           results.set(r.id, { id: r.id, status: r.status, body: r.body })
         }
       }
+      const missing = pending.filter((p) => !results.has(p.id) && !retry.includes(p))
+      if (missing.length > 0) {
+        throw new HttpError(
+          'invalid-response',
+          'graph',
+          `$batch response is missing ${String(missing.length)} of ${String(pending.length)} sub-responses.`,
+        )
+      }
       pending = retry
-      if (pending.length > 0) await sleep(Math.min(wait, MAX_RETRY_WAIT_MS), options.signal)
+      if (pending.length > 0) {
+        retryBudget.left--
+        await sleep(wait, options.signal)
+      }
     }
-    return chunk.flatMap((r) => results.get(r.id) ?? [])
+    return chunk.map((r) => {
+      const response = results.get(r.id)
+      if (!response) throw new Error(`Unreachable: no $batch response for ${r.id}`)
+      return response
+    })
   }
 
   async function batch(requests: readonly BatchRequest[], options: RequestOptions = {}) {
+    if (new Set(requests.map((r) => r.id)).size !== requests.length) {
+      throw new HttpError('invalid-request', 'graph', '$batch request ids must be unique.')
+    }
     const chunks: BatchRequest[][] = []
     for (let i = 0; i < requests.length; i += GRAPH_BATCH_MAX) {
       chunks.push(requests.slice(i, i + GRAPH_BATCH_MAX))
@@ -340,5 +427,10 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     return results.flat()
   }
 
-  return { getJson, getAllPages, batch }
+  function reset() {
+    decodedCache.clear()
+    clearMaskCache()
+  }
+
+  return { getJson, getJsonOrNull, getAllPages, batch, reset }
 }

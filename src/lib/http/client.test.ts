@@ -1,14 +1,14 @@
 import { delay, http, HttpResponse } from 'msw'
+import { APIM_API_VERSION } from '@/services/arm/apiVersion'
+import { ARM, GRAPH } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
 import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
-import { createHttpClient, parseRetryAfter, type HttpClientConfig } from './client'
-import { HttpError, UnauthorizedError } from './errors'
+import { createHttpClient, type HttpClientConfig } from './client'
+import { HttpError } from './errors'
 import { GRAPH_BATCH_URL } from './readOnly'
 import { createRequestLogStore } from './requestLog'
 
-const ARM = 'https://management.azure.com'
-const GRAPH = 'https://graph.microsoft.com/v1.0'
-const SVC_URL = `${ARM}/subscriptions/${TEST_SUB}/providers/Microsoft.ApiManagement/service?api-version=2024-05-01`
+const SVC_URL = `${ARM}/subscriptions/${TEST_SUB}/providers/Microsoft.ApiManagement/service?api-version=${APIM_API_VERSION}`
 
 function setup(overrides: Partial<HttpClientConfig> = {}) {
   const tokens = { arm: armToken(), graph: graphToken() }
@@ -62,7 +62,7 @@ describe('createHttpClient', () => {
       method: 'GET',
       state: 'ok',
       status: 200,
-      url: `${ARM}/subscriptions/{sub}/providers/Microsoft.ApiManagement/service?api-version=2024-05-01`,
+      url: `${ARM}/subscriptions/{sub}/providers/Microsoft.ApiManagement/service?api-version=${APIM_API_VERSION}`,
       queryKey: '["arm","{sub}"]',
     })
     expect(entry?.bytes).toBeGreaterThan(0)
@@ -121,6 +121,47 @@ describe('createHttpClient', () => {
     expect(swapped.log.getState().entries).toHaveLength(0)
   })
 
+  it('resolves a 404 to null with getJsonOrNull and logs it as empty, not as an error', async () => {
+    server.use(
+      http.get(`${ARM}/policies/policy`, () =>
+        HttpResponse.json({ error: { code: 'ResourceNotFound' } }, { status: 404 }),
+      ),
+    )
+    const { client, log } = setup()
+    await expect(client.getJsonOrNull('arm', `${ARM}/policies/policy`)).resolves.toBeNull()
+    expect(log.getState().entries[0]).toMatchObject({ state: 'empty', status: 404 })
+    expect(log.getState().counters.errors).toBe(0)
+
+    expect((await caught(client.getJson('arm', `${ARM}/policies/policy`))).kind).toBe('not-found')
+    expect(log.getState().counters.errors).toBe(1)
+  })
+
+  it('still throws other errors from getJsonOrNull', async () => {
+    server.use(http.get(`${ARM}/forbidden`, () => new HttpResponse(null, { status: 403 })))
+    const error = await caught(setup().client.getJsonOrNull('arm', `${ARM}/forbidden`))
+    expect(error.kind).toBe('forbidden')
+  })
+
+  it('refuses an expired token before sending anything, with the az command to copy', async () => {
+    const expired = armToken({ exp: Math.floor(Date.now() / 1000) - 60 })
+    const { client, log } = setup({ getToken: () => expired })
+    const error = await caught(client.getJson('arm', SVC_URL))
+    expect(error.kind).toBe('token-expired')
+    expect(error.message).toContain('re-run the az command')
+    expect(error.azCommand).toBe(
+      `az account get-access-token --resource https://management.azure.com --tenant ${TEST_TENANT} --query accessToken -o tsv`,
+    )
+    expect(log.getState().entries).toHaveLength(0)
+  })
+
+  it('does not block on a tenant mismatch; that is only a warning on the token screen', async () => {
+    server.use(http.get(`${ARM}/x`, () => HttpResponse.json({})))
+    const other = armToken({ tid: '00000000-0000-0000-0000-0000000000ff' })
+    await expect(
+      setup({ getToken: () => other }).client.getJson('arm', `${ARM}/x`),
+    ).resolves.toEqual({})
+  })
+
   it('honours Retry-After on 429 and then succeeds', async () => {
     let calls = 0
     server.use(
@@ -145,7 +186,7 @@ describe('createHttpClient', () => {
     expect(sleeps).toEqual([1000, 2000])
   })
 
-  it('turns 401 into UnauthorizedError with the az command, without leaking the token or IDs', async () => {
+  it('turns 401 into an unauthorized error with the az command, without leaking the token or IDs', async () => {
     const { client, tokens } = setup()
     server.use(
       http.get(`${ARM}/subscriptions/:sub/providers/Microsoft.ApiManagement/service`, () =>
@@ -161,8 +202,8 @@ describe('createHttpClient', () => {
       ),
     )
     const error = await caught(client.getJson('arm', SVC_URL))
-    expect(error).toBeInstanceOf(UnauthorizedError)
-    const unauthorized = error as UnauthorizedError
+    expect(error.kind).toBe('unauthorized')
+    const unauthorized = error
     expect(unauthorized.azCommand).toBe(
       `az account get-access-token --resource https://management.azure.com --tenant ${TEST_TENANT} --query accessToken -o tsv`,
     )
@@ -272,13 +313,67 @@ describe('batch', () => {
     expect(sleeps).toEqual([1000])
     expect(log.getState().entries.map((e) => e.label)).toContain('$batch ×20')
   })
-})
 
-describe('parseRetryAfter', () => {
-  it('reads seconds and HTTP dates', () => {
-    expect(parseRetryAfter('5')).toBe(5000)
-    expect(parseRetryAfter(new Date(10_000).toUTCString(), 4_000)).toBe(6000)
-    expect(parseRetryAfter(null)).toBeUndefined()
-    expect(parseRetryAfter('soon')).toBeUndefined()
+  it('retries 503 sub-responses too, reading Retry-After case-insensitively', async () => {
+    let calls = 0
+    server.use(
+      http.post(GRAPH_BATCH_URL, () =>
+        HttpResponse.json({
+          responses: [
+            ++calls === 1
+              ? { id: 'a', status: 503, headers: { 'retry-after': '3' } }
+              : { id: 'a', status: 200, body: {} },
+          ],
+        }),
+      ),
+    )
+    const { client, sleeps } = setup()
+    await expect(client.batch([{ id: 'a', url: '/groups/a' }])).resolves.toEqual([
+      { id: 'a', status: 200, body: {} },
+    ])
+    expect(sleeps).toEqual([3000])
+  })
+
+  it('shares one retry budget between the whole POST and its sub-requests', async () => {
+    let posts = 0
+    server.use(
+      http.post(GRAPH_BATCH_URL, () => {
+        posts++
+        return posts % 2 === 1
+          ? new HttpResponse(null, { status: 429 })
+          : HttpResponse.json({ responses: [{ id: 'a', status: 429 }] })
+      }),
+    )
+    const { client, log } = setup({ maxRetries: 3 })
+    const [response] = await client.batch([{ id: 'a', url: '/groups/a' }])
+    // POST 429 (retry 1) → sub 429 (retry 2) → POST 429 (retry 3) → sub 429, budget spent.
+    expect(response?.status).toBe(429)
+    expect(posts).toBe(4)
+    // Whole-POST retries are counted on their log line; sub-request retries appear as new $batch lines.
+    expect(log.getState().counters.retries).toBe(2)
+    expect(log.getState().entries.map((e) => e.label)).toEqual(['$batch ×1', '$batch ×1'])
+  })
+
+  it('rejects duplicate ids across chunks before sending anything', async () => {
+    const { client, log } = setup()
+    const requests = Array.from({ length: 25 }, (_, i) => ({ id: `r${String(i % 21)}`, url: '/x' }))
+    expect((await caught(client.batch(requests))).kind).toBe('invalid-request')
+    expect(log.getState().entries).toHaveLength(0)
+  })
+
+  it('fails instead of silently dropping a sub-response Graph left out', async () => {
+    server.use(
+      http.post(GRAPH_BATCH_URL, () =>
+        HttpResponse.json({ responses: [{ id: 'a', status: 200, body: {} }] }),
+      ),
+    )
+    const error = await caught(
+      setup().client.batch([
+        { id: 'a', url: '/groups/a' },
+        { id: 'b', url: '/groups/b' },
+      ]),
+    )
+    expect(error.kind).toBe('invalid-response')
+    expect(error.message).toContain('1 of 2')
   })
 })

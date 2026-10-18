@@ -1,5 +1,5 @@
 import { armToken, graphToken, TEST_TENANT } from '@/test/helpers/fakeJwt'
-import { checkToken, EXPIRY_WARNING_MS } from './checks'
+import { checkToken, EXPIRY_WARNING_MS, isBlockingWarning } from './checks'
 import { decodeJwt, type TokenClaims } from './jwt'
 import { azTokenCommand, isExpectedAudience } from './resources'
 
@@ -16,6 +16,13 @@ describe('checkToken', () => {
     expect(
       checkToken({ api: 'arm', claims: claims(armToken()), tenantId: TEST_TENANT, now }),
     ).toEqual([])
+  })
+
+  it('accepts a token whose aud array contains the expected audience', () => {
+    const multi = claims(
+      armToken({ aud: ['https://other.example.net', 'https://management.azure.com'] }),
+    )
+    expect(checkToken({ api: 'arm', claims: multi, now })).toEqual([])
   })
 
   it('flags a Graph token pasted into the ARM field', () => {
@@ -71,5 +78,14 @@ describe('azTokenCommand', () => {
       `az account get-access-token --resource https://graph.microsoft.com --tenant ${TEST_TENANT} --query accessToken -o tsv`,
     )
     expect(azTokenCommand('arm')).toContain('--tenant <TENANT_ID>')
+  })
+})
+
+describe('isBlockingWarning', () => {
+  it('blocks only on problems Azure would reject with 401', () => {
+    expect(isBlockingWarning({ kind: 'wrong-audience', expected: 'a', actual: 'b' })).toBe(true)
+    expect(isBlockingWarning({ kind: 'expired' })).toBe(true)
+    expect(isBlockingWarning({ kind: 'tenant-mismatch', expected: 'a', actual: 'b' })).toBe(false)
+    expect(isBlockingWarning({ kind: 'expiring-soon', msLeft: 1000 })).toBe(false)
   })
 })
