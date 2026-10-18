@@ -1,4 +1,6 @@
 import { delay, http, HttpResponse } from 'msw'
+import { APIM_API_VERSION } from '@/services/arm/apiVersion'
+import { ARM, GRAPH } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
 import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
 import { createHttpClient, parseRetryAfter, type HttpClientConfig } from './client'
@@ -6,9 +8,7 @@ import { HttpError, UnauthorizedError } from './errors'
 import { GRAPH_BATCH_URL } from './readOnly'
 import { createRequestLogStore } from './requestLog'
 
-const ARM = 'https://management.azure.com'
-const GRAPH = 'https://graph.microsoft.com/v1.0'
-const SVC_URL = `${ARM}/subscriptions/${TEST_SUB}/providers/Microsoft.ApiManagement/service?api-version=2024-05-01`
+const SVC_URL = `${ARM}/subscriptions/${TEST_SUB}/providers/Microsoft.ApiManagement/service?api-version=${APIM_API_VERSION}`
 
 function setup(overrides: Partial<HttpClientConfig> = {}) {
   const tokens = { arm: armToken(), graph: graphToken() }

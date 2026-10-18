@@ -6,6 +6,8 @@ export interface ApiResource {
   readonly resource: string
   /** Origin every request URL for this API must have. */
   readonly origin: string
+  /** Prefix for request URLs: the origin, plus the version path for Graph. */
+  readonly baseUrl: string
   /** `aud` values Entra may put in a token for this resource. */
   readonly audiences: readonly string[]
 }
@@ -14,6 +16,7 @@ export const API_RESOURCES: Readonly<Record<ApiKind, ApiResource>> = {
   arm: {
     resource: 'https://management.azure.com',
     origin: 'https://management.azure.com',
+    baseUrl: 'https://management.azure.com',
     audiences: [
       'https://management.azure.com',
       'https://management.core.windows.net',
@@ -24,6 +27,7 @@ export const API_RESOURCES: Readonly<Record<ApiKind, ApiResource>> = {
   graph: {
     resource: 'https://graph.microsoft.com',
     origin: 'https://graph.microsoft.com',
+    baseUrl: 'https://graph.microsoft.com/v1.0',
     audiences: [
       'https://graph.microsoft.com',
       // Application ID of Microsoft Graph

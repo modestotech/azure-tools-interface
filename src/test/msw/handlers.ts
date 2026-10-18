@@ -1,8 +1,9 @@
 import { http, HttpResponse } from 'msw'
+import { API_RESOURCES } from '@/lib/token'
 import { APIM_API_VERSION } from '@/services/arm/apiVersion'
 
-export const ARM = 'https://management.azure.com'
-export const GRAPH = 'https://graph.microsoft.com/v1.0'
+export const ARM = API_RESOURCES.arm.baseUrl
+export const GRAPH = API_RESOURCES.graph.baseUrl
 
 /** Fictional data only. Real ARM/Graph fixtures arrive with the services layer (M2). */
 export const handlers = [

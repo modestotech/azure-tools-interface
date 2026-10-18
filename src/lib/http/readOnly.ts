@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import type { ApiKind } from '@/lib/token'
+import { API_RESOURCES, type ApiKind } from '@/lib/token'
 import { HttpError } from './errors'
 
-export const GRAPH_BATCH_URL = 'https://graph.microsoft.com/v1.0/$batch'
+export const GRAPH_BATCH_URL = `${API_RESOURCES.graph.baseUrl}/$batch`
 export const GRAPH_BATCH_MAX = 20
 
 const batchBodySchema = z.object({

@@ -28,7 +28,7 @@ export interface RequestOptions {
 
 export interface BatchRequest {
   readonly id: string
-  /** Path relative to `https://graph.microsoft.com/v1.0`, starting with `/`. */
+  /** Path relative to the Graph `baseUrl` (`/v1.0`), starting with `/`. */
   readonly url: string
 }
 
