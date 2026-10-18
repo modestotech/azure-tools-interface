@@ -1,7 +1,13 @@
 import { createHttpClient, requestLogStore } from '@/lib/http'
 import { sessionStore, tokenFor } from './sessionStore'
 
-/** The app's single HTTP client, wired to the in-memory session and the request log. */
+/**
+ * The app's single HTTP client, wired to the in-memory session and the request log.
+ *
+ * It lives in `app/` because it reads the session store. Lower layers never import it: services
+ * take an `HttpClient` as a parameter (layering is one-way, `views → domain → services → lib`),
+ * and the app shell passes this instance in. Tests pass their own client.
+ */
 export const httpClient = createHttpClient({
   getToken: (api) => tokenFor(sessionStore.getState(), api),
   getMaskValues: () => {
