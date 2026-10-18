@@ -70,6 +70,8 @@ export interface HttpClient {
    * is an `invalid-response` error, never silently dropped.
    */
   batch(requests: readonly BatchRequest[], options?: RequestOptions): Promise<BatchResponse[]>
+  /** Forgets anything derived from tokens (the decoded-claims cache). Called by "Clear session". */
+  reset(): void
 }
 
 const MAX_PAGES = 1000
@@ -425,5 +427,9 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     return results.flat()
   }
 
-  return { getJson, getJsonOrNull, getAllPages, batch }
+  function reset() {
+    decodedCache.clear()
+  }
+
+  return { getJson, getJsonOrNull, getAllPages, batch, reset }
 }

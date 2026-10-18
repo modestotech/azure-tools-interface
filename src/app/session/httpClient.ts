@@ -16,12 +16,3 @@ export const httpClient = createHttpClient({
   },
   logger: requestLogStore.getState(),
 })
-
-/**
- * "Clear session": forgets tokens and IDs, and the request log (its raw URLs contain the IDs).
- * M4 also clears the TanStack Query cache here.
- */
-export function clearSession(): void {
-  sessionStore.getState().reset()
-  requestLogStore.getState().clear()
-}

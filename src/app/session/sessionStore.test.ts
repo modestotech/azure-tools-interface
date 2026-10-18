@@ -2,7 +2,8 @@ import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
 import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
 import { requestLogStore } from '@/lib/http'
-import { clearSession, httpClient } from './httpClient'
+import { clearSession, onClearSession } from './clearSession'
+import { httpClient } from './httpClient'
 import { sessionStore } from './sessionStore'
 
 describe('session store', () => {
@@ -53,15 +54,18 @@ describe('session store', () => {
     expect(sessionStore.getState().armToken).toBe(token)
   })
 
-  it('clearSession wipes tokens, IDs and the request log', async () => {
+  it('clearSession wipes tokens, IDs, the client token cache and the request log', async () => {
     sessionStore.getState().setToken('arm', armToken())
     sessionStore.getState().setSubscriptionId(TEST_SUB)
     server.use(http.get('https://management.azure.com/x', () => HttpResponse.json({})))
     await httpClient.getJson('arm', 'https://management.azure.com/x')
     expect(requestLogStore.getState().entries).toHaveLength(1)
 
+    const resetClient = vi.spyOn(httpClient, 'reset')
+
     clearSession()
 
+    expect(resetClient).toHaveBeenCalledOnce()
     expect(sessionStore.getState()).toMatchObject({
       armToken: '',
       graphToken: '',
@@ -69,5 +73,29 @@ describe('session store', () => {
       subscriptionId: '',
     })
     expect(requestLogStore.getState().entries).toHaveLength(0)
+  })
+
+  it('clearSession runs every registered handler, even when one throws', () => {
+    sessionStore.getState().setTenantId(TEST_TENANT)
+    const calls: string[] = []
+    const offs = [
+      onClearSession(() => {
+        calls.push('a')
+        throw new Error('boom')
+      }),
+      onClearSession(() => calls.push('b')),
+    ]
+    expect(() => {
+      clearSession()
+    }).toThrow(AggregateError)
+    expect(calls).toEqual(['a', 'b'])
+    expect(sessionStore.getState().tenantId).toBe('')
+
+    offs.forEach((off) => {
+      off()
+    })
+    calls.length = 0
+    clearSession()
+    expect(calls).toEqual([])
   })
 })
