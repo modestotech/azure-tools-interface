@@ -5,13 +5,29 @@ import { HttpError } from './errors'
 export const GRAPH_BATCH_URL = `${API_RESOURCES.graph.baseUrl}/$batch`
 export const GRAPH_BATCH_MAX = 20
 
+/**
+ * A `$batch` sub-request URL is resolved by Graph against `/v1.0`, so it must stay a plain relative
+ * path: no `..` or `.` segments, no `//`, no backslashes, and no percent-encoded dots or slashes
+ * (`encodePathSegment` never produces them). The query string is left to `withQuery`.
+ */
+function isSafeBatchPath(url: string): boolean {
+  const path = url.split('?', 1)[0] ?? ''
+  return (
+    path.startsWith('/') &&
+    !path.includes('//') &&
+    !url.includes('\\') &&
+    !/%(2e|2f|5c)/i.test(path) &&
+    !path.split('/').some((segment) => segment === '.' || segment === '..')
+  )
+}
+
 const batchBodySchema = z.object({
   requests: z
     .array(
       z.strictObject({
         id: z.string().min(1),
         method: z.literal('GET'),
-        url: z.string().startsWith('/'),
+        url: z.string().refine(isSafeBatchPath),
       }),
     )
     .min(1)

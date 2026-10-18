@@ -6,7 +6,7 @@ import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fake
 import { createHttpClient, type HttpClientConfig } from './client'
 import { HttpError } from './errors'
 import { GRAPH_BATCH_URL } from './readOnly'
-import { createRequestLogStore } from './requestLog'
+import { createRequestLogStore, exportableEntries } from './requestLog'
 
 const SVC_URL = `${ARM}/subscriptions/${TEST_SUB}/providers/Microsoft.ApiManagement/service?api-version=${APIM_API_VERSION}`
 
@@ -240,6 +240,45 @@ describe('createHttpClient', () => {
     const error = await caught(setup().client.getJson('arm', `${ARM}/x`))
     expect(error.kind).toBe('network')
     expect(error.message).toContain('CORS')
+  })
+
+  it('does not follow redirects, so the token never reaches a URL the host check did not see', async () => {
+    let followed = false
+    server.use(
+      http.get(`${ARM}/moved`, () => HttpResponse.redirect(`${ARM}/elsewhere`, 302)),
+      http.get(`${ARM}/elsewhere`, () => {
+        followed = true
+        return HttpResponse.json({})
+      }),
+    )
+    const error = await caught(setup().client.getJson('arm', `${ARM}/moved`))
+    expect(error.kind).toBe('network')
+    expect(followed).toBe(false)
+  })
+
+  it("logs the error kind for export, and keeps Azure's error text out of the export", async () => {
+    server.use(
+      http.get(`${ARM}/denied`, () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'AuthorizationFailed',
+              message: `dev@contoso.example.net (00000000-0000-0000-0000-000000000042) lacks access`,
+            },
+          },
+          { status: 403 },
+        ),
+      ),
+    )
+    const { client, log } = setup()
+    await caught(client.getJson('arm', `${ARM}/denied`))
+    const [entry] = log.getState().entries
+    expect(entry).toMatchObject({ errorKind: 'forbidden', status: 403 })
+    expect(entry?.error).toContain('dev@contoso.example.net')
+    const exported = JSON.stringify(exportableEntries(log.getState().entries))
+    expect(exported).toContain('"errorKind":"forbidden"')
+    expect(exported).not.toContain('contoso')
+    expect(exported).not.toContain('000000000042')
   })
 
   it('logs aborted requests as cancelled and rethrows the AbortError', async () => {
