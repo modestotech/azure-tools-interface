@@ -17,6 +17,7 @@ export {
 } from './errors'
 export { createLimiter, type Limiter } from './limiter'
 export { maskText, type MaskValues } from './mask'
+export { odataString, withQuery } from './odata'
 export { assertReadOnly, GRAPH_BATCH_MAX, GRAPH_BATCH_URL, type HttpMethod } from './readOnly'
 export {
   createRequestLogStore,
