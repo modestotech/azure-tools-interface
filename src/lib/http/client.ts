@@ -1,14 +1,19 @@
 import { z } from 'zod'
 import {
   API_RESOURCES,
-  azTokenCommand,
   checkToken,
   decodeJwt,
   isBlockingWarning,
   type ApiKind,
   type TokenClaims,
 } from '@/lib/token'
-import { ForbiddenError, HttpError, NotFoundError, UnauthorizedError } from './errors'
+import {
+  forbiddenError,
+  HttpError,
+  notFoundError,
+  tokenExpiredError,
+  unauthorizedError,
+} from './errors'
 import { createLimiter } from './limiter'
 import { maskText, type MaskValues } from './mask'
 import { assertReadOnly, GRAPH_BATCH_MAX, GRAPH_BATCH_URL, type HttpMethod } from './readOnly'
@@ -147,7 +152,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
   function requireValidToken(api: ApiKind): string {
     const token = config.getToken(api)
     if (!token) {
-      throw new HttpError('no-token', api, `No ${api.toUpperCase()} token entered.`)
+      throw new HttpError('no-token', api, `No ${API_RESOURCES[api].label} token entered.`)
     }
     const claims = claimsOf(api, token)
     const blocking = claims ? checkToken({ api, claims }).find(isBlockingWarning) : undefined
@@ -155,16 +160,11 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
       throw new HttpError(
         'audience-mismatch',
         api,
-        `The ${api.toUpperCase()} token is not valid for ${API_RESOURCES[api].resource}. Paste a token from the ${api.toUpperCase()} az command.`,
+        `The ${API_RESOURCES[api].label} token is not valid for ${API_RESOURCES[api].resource}. Paste a token from the ${API_RESOURCES[api].label} az command.`,
       )
     }
     if (blocking?.kind === 'expired') {
-      const command = azTokenCommand(api, config.getMaskValues().tenantId)
-      throw new HttpError(
-        'token-expired',
-        api,
-        `The ${api.toUpperCase()} token has expired. Get a new one with: ${mask(command)}`,
-      )
+      throw tokenExpiredError(api, config.getMaskValues().tenantId)
     }
     return token
   }
@@ -180,7 +180,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
       throw new HttpError(
         'disallowed-host',
         api,
-        `Blocked request to ${mask(url)}: ${api.toUpperCase()} requests must go to ${API_RESOURCES[api].origin}.`,
+        `Blocked request to ${mask(url)}: ${API_RESOURCES[api].label} requests must go to ${API_RESOURCES[api].origin}.`,
       )
     }
   }
@@ -225,11 +225,11 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     const detail = mask(errorDetail(response.status, response.statusText, text))
     switch (response.status) {
       case 401:
-        return new UnauthorizedError(api, maskedUrl, config.getMaskValues().tenantId, detail)
+        return unauthorizedError(api, maskedUrl, config.getMaskValues().tenantId, detail)
       case 403:
-        return new ForbiddenError(api, maskedUrl, detail)
+        return forbiddenError(api, maskedUrl, detail)
       case 404:
-        return new NotFoundError(api, maskedUrl, detail)
+        return notFoundError(api, maskedUrl, detail)
       default:
         return new HttpError(
           isRetryableStatus(response.status) ? 'throttled' : 'http',

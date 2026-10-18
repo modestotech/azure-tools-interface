@@ -4,7 +4,7 @@ import { ARM, GRAPH } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
 import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
 import { createHttpClient, type HttpClientConfig } from './client'
-import { HttpError, UnauthorizedError } from './errors'
+import { HttpError } from './errors'
 import { GRAPH_BATCH_URL } from './readOnly'
 import { createRequestLogStore } from './requestLog'
 
@@ -147,8 +147,9 @@ describe('createHttpClient', () => {
     const { client, log } = setup({ getToken: () => expired })
     const error = await caught(client.getJson('arm', SVC_URL))
     expect(error.kind).toBe('token-expired')
-    expect(error.message).toContain(
-      'az account get-access-token --resource https://management.azure.com --tenant {tid}',
+    expect(error.message).toContain('re-run the az command')
+    expect(error.azCommand).toBe(
+      `az account get-access-token --resource https://management.azure.com --tenant ${TEST_TENANT} --query accessToken -o tsv`,
     )
     expect(log.getState().entries).toHaveLength(0)
   })
@@ -185,7 +186,7 @@ describe('createHttpClient', () => {
     expect(sleeps).toEqual([1000, 2000])
   })
 
-  it('turns 401 into UnauthorizedError with the az command, without leaking the token or IDs', async () => {
+  it('turns 401 into an unauthorized error with the az command, without leaking the token or IDs', async () => {
     const { client, tokens } = setup()
     server.use(
       http.get(`${ARM}/subscriptions/:sub/providers/Microsoft.ApiManagement/service`, () =>
@@ -201,8 +202,8 @@ describe('createHttpClient', () => {
       ),
     )
     const error = await caught(client.getJson('arm', SVC_URL))
-    expect(error).toBeInstanceOf(UnauthorizedError)
-    const unauthorized = error as UnauthorizedError
+    expect(error.kind).toBe('unauthorized')
+    const unauthorized = error
     expect(unauthorized.azCommand).toBe(
       `az account get-access-token --resource https://management.azure.com --tenant ${TEST_TENANT} --query accessToken -o tsv`,
     )

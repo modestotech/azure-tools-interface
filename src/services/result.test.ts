@@ -1,4 +1,4 @@
-import { ForbiddenError, HttpError, NotFoundError } from '@/lib/http'
+import { forbiddenError, HttpError, notFoundError } from '@/lib/http'
 import { resultFromError, settle } from './result'
 
 describe('ResourceResult', () => {
@@ -11,12 +11,12 @@ describe('ResourceResult', () => {
   })
 
   it('classifies HTTP errors per resource', async () => {
-    const forbidden = new ForbiddenError('graph', '/x', 'denied')
+    const forbidden = forbiddenError('graph', '/x', 'denied')
     await expect(settle(Promise.reject(forbidden))).resolves.toEqual({
       status: 'forbidden',
       error: forbidden,
     })
-    expect(resultFromError(new NotFoundError('arm', '/x', 'gone'))).toEqual({ status: 'empty' })
+    expect(resultFromError(notFoundError('arm', '/x', 'gone'))).toEqual({ status: 'empty' })
     const network = new HttpError('network', 'arm', 'offline')
     expect(resultFromError(network)).toEqual({ status: 'error', error: network })
   })

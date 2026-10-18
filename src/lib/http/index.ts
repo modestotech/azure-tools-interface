@@ -8,11 +8,12 @@ export {
   type RequestOptions,
 } from './client'
 export {
-  ForbiddenError,
+  forbiddenError,
   HttpError,
   isHttpError,
-  NotFoundError,
-  UnauthorizedError,
+  notFoundError,
+  tokenExpiredError,
+  unauthorizedError,
   type HttpErrorKind,
 } from './errors'
 export { createLimiter, type Limiter } from './limiter'

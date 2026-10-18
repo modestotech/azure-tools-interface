@@ -2,6 +2,8 @@
 export type ApiKind = 'arm' | 'graph'
 
 export interface ApiResource {
+  /** Name shown in messages and the UI. */
+  readonly label: string
   /** Value passed to `az account get-access-token --resource`. */
   readonly resource: string
   /** Origin every request URL for this API must have. */
@@ -14,6 +16,7 @@ export interface ApiResource {
 
 export const API_RESOURCES: Readonly<Record<ApiKind, ApiResource>> = {
   arm: {
+    label: 'ARM',
     resource: 'https://management.azure.com',
     origin: 'https://management.azure.com',
     baseUrl: 'https://management.azure.com',
@@ -25,6 +28,7 @@ export const API_RESOURCES: Readonly<Record<ApiKind, ApiResource>> = {
     ],
   },
   graph: {
+    label: 'Graph',
     resource: 'https://graph.microsoft.com',
     origin: 'https://graph.microsoft.com',
     baseUrl: 'https://graph.microsoft.com/v1.0',
