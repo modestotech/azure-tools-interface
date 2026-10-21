@@ -6,6 +6,38 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
+/**
+ * Layering is one-way: views / scripts → domain → services → lib (see CLAUDE.md › Architecture).
+ * Each entry lists the top-level `src/` folders a layer must not import, via the `@/` alias or a
+ * relative path. Tests are exempt: they use helpers from `test/` and constants from `services/`.
+ */
+const LAYERS = [
+  { folder: 'lib', forbidden: ['app', 'services', 'domain', 'views', 'scripts', 'components'] },
+  { folder: 'services', forbidden: ['app', 'domain', 'views', 'scripts', 'components'] },
+  { folder: 'domain', forbidden: ['app', 'views', 'scripts', 'components'] },
+]
+
+function layerRule({ folder, forbidden }) {
+  const names = forbidden.join('|')
+  return {
+    files: [`src/${folder}/**/*.{ts,tsx}`],
+    ignores: ['**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: `^(@/|(\\.\\./)+)(${names})(/|$)`,
+              message: `${folder}/ must not import from ${forbidden.join(', ')} (one-way layering, see CLAUDE.md).`,
+            },
+          ],
+        },
+      ],
+    },
+  }
+}
+
 export default defineConfig([
   globalIgnores(['dist', 'coverage', 'public/mockServiceWorker.js', 'samples-raw']),
   {
@@ -25,6 +57,7 @@ export default defineConfig([
       '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
     },
   },
+  ...LAYERS.map(layerRule),
   {
     files: ['eslint.config.js'],
     extends: [js.configs.recommended],

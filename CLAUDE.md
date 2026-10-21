@@ -136,7 +136,7 @@ tests/
   security/            # Node-side guards: source scan for network/storage use, production-build checks
 ```
 
-Layering is one-way: `views` / `scripts` → `domain` → `services` → `lib`. Views never call fetch directly and never parse raw ARM/Graph shapes; they consume the normalized domain model.
+Layering is one-way: `views` / `scripts` → `domain` → `services` → `lib`. Views never call fetch directly and never parse raw ARM/Graph shapes; they consume the normalized domain model. ESLint enforces the `lib` / `services` / `domain` boundaries (`LAYERS` in `eslint.config.js`; tests are exempt).
 
 Services take an `HttpClient` as a parameter and never import from `app/`. The single instance lives in `app/session/httpClient.ts` and is passed in by the app shell; tests pass their own.
 

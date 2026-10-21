@@ -75,9 +75,9 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - `lib/token/ids.ts`: `setSubscriptionId` stores only a GUID, `setTenantId` only a GUID or domain name (otherwise `''`, returning `false`). `azTokenCommand` falls back to `<TENANT_ID>` on an invalid value.
   - The log export carries `errorKind` instead of the error text.
   - Demo mode fails unmocked ARM/Graph calls instead of passing them to real Azure.
-- **Architecture review follow-ups (open, 2026-10-18):**
-  - `sessionStore.test.ts` uses literal `https://management.azure.com` URLs; switch to `ARM` from `test/msw/handlers.ts`. `test/helpers/fakeJwt.ts` should take `aud` from `API_RESOURCES[api].resource`.
-  - Enforce layering in `eslint.config.js` (`no-restricted-imports` per folder: `lib` imports nothing above it, `services` never imports `app`/`domain`/`views`, `domain` never imports `app`/`views`/`scripts`). Do this before M2 adds the first service files.
+- **Architecture review follow-ups (done):**
+  - `sessionStore.test.ts` uses `ARM` from `test/msw/handlers.ts`; `fakeJwt.ts` takes `aud` from `API_RESOURCES[api].resource`.
+  - Layering is enforced by `no-restricted-imports` per folder (`LAYERS` in `eslint.config.js`), for both `@/` and relative imports. Tests are exempt.
   - CSP: no milestone owned it. Now in M8 (below).
 - **Code quality review follow-ups (open, 2026-10-18), most severe first.** Fix them before M2 builds on the client:
   - Validation failures after `send()` are logged as `ok`. `getAllPages` and `batchChunk` throw `invalid-response` (with no `url`/`status`) after the log entry has already finished. Pass the Zod schema into `send()` so the failure goes through `fail()`. Also show how many `$batch` sub-responses failed on the log line.
