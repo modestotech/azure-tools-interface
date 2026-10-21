@@ -382,6 +382,85 @@ describe('createHttpClient', () => {
   })
 })
 
+/** A fetch that answers after `ms` (or never), and rejects with the signal's reason when it aborts. */
+function slowFetch(ms = Infinity): typeof fetch {
+  return (_input, init) =>
+    new Promise((resolve, reject) => {
+      const signal = init?.signal
+      const answer = () => {
+        resolve(new Response('{}'))
+      }
+      const timer = Number.isFinite(ms) ? setTimeout(answer, ms) : 0
+      signal?.addEventListener('abort', () => {
+        clearTimeout(timer)
+        reject(signal.reason as Error)
+      })
+    })
+}
+
+describe('timeouts and cancellation', () => {
+  it('fails a request with no response within the time limit as a timeout', async () => {
+    const { client, log } = setup({ fetch: slowFetch(), requestTimeoutMs: 20 })
+    const error = await caught(client.getJson('arm', `${ARM}/subscriptions/${TEST_SUB}/hung`))
+    expect(error).toMatchObject({ kind: 'timeout', url: `${ARM}/subscriptions/{sub}/hung` })
+    expect(log.getState().entries[0]).toMatchObject({ state: 'error', errorKind: 'timeout' })
+  })
+
+  it('also times out a response body that never finishes', async () => {
+    let fetchSignal: AbortSignal | undefined
+    const fetch: typeof globalThis.fetch = (_input, init) => {
+      fetchSignal = init?.signal ?? undefined
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"value":'))
+          // Like a real fetch: aborting the request's signal errors the body stream.
+          fetchSignal?.addEventListener('abort', () => {
+            controller.error(fetchSignal?.reason)
+          })
+        },
+      })
+      return Promise.resolve(new Response(stream))
+    }
+    const { client, log } = setup({ fetch, requestTimeoutMs: 20 })
+    expect((await caught(client.getJson('arm', `${ARM}/stalled`))).kind).toBe('timeout')
+    expect(log.getState().entries[0]).toMatchObject({ state: 'error', status: 200 })
+  })
+
+  it('does not count time spent waiting in the limiter queue', async () => {
+    // Each request takes 60 ms of a 100 ms limit; the second also waits 60 ms for the only slot.
+    const { client, log } = setup({
+      fetch: slowFetch(60),
+      maxConcurrency: 1,
+      requestTimeoutMs: 100,
+    })
+    await Promise.all([client.getJson('arm', `${ARM}/a`), client.getJson('arm', `${ARM}/b`)])
+    expect(log.getState().entries.map((e) => e.state)).toEqual(['ok', 'ok'])
+  })
+
+  it('drops a queued request when its signal aborts, without sending it', async () => {
+    const fetch = vi.fn(slowFetch(30))
+    const { client, log } = setup({ fetch, maxConcurrency: 1 })
+    const first = client.getJson('arm', `${ARM}/first`)
+    const controller = new AbortController()
+    const queued = client.getJson('arm', `${ARM}/queued`, { signal: controller.signal })
+
+    controller.abort()
+    await expect(queued).rejects.toMatchObject({ name: 'AbortError' })
+    await first
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(log.getState().entries.map((e) => e.state)).toEqual(['ok', 'cancelled'])
+  })
+
+  it('reports a caller abort as cancelled, not as a timeout', async () => {
+    const { client, log } = setup({ fetch: slowFetch(), requestTimeoutMs: 1000 })
+    const controller = new AbortController()
+    const promise = client.getJson('arm', `${ARM}/x`, { signal: controller.signal })
+    controller.abort()
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+    expect(log.getState().entries[0]?.state).toBe('cancelled')
+  })
+})
+
 describe('batch', () => {
   it('chunks by 20, sends only GETs, retries 429 sub-responses and keeps order', async () => {
     const posted: { method: string; url: string }[][] = []

@@ -33,6 +33,11 @@ export interface HttpClientConfig {
   maxConcurrency?: number
   /** Retries on 429 / 503 per request (a `$batch` chunk shares one budget). Default 3. */
   maxRetries?: number
+  /**
+   * Time limit for one attempt, from leaving the limiter queue until the body is read. Time spent
+   * queued doesn't count. Default 30 s.
+   */
+  requestTimeoutMs?: number
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
 }
 
@@ -157,8 +162,20 @@ const errorBodySchema = z.looseObject({
   error: z.looseObject({ code: z.string().optional(), message: z.string().optional() }),
 })
 
-function isAbort(error: unknown, signal: AbortSignal | undefined): boolean {
-  return signal?.aborted === true || (error instanceof Error && error.name === 'AbortError')
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+
+/**
+ * Why a fetch or body read rejected: the caller aborted, the attempt's time limit ran out
+ * (`AbortSignal.timeout` rejects with a `TimeoutError`), or the network failed.
+ */
+function failureCause(
+  error: unknown,
+  callerSignal: AbortSignal | undefined,
+): 'cancelled' | 'timeout' | 'network' {
+  if (callerSignal?.aborted) return 'cancelled'
+  if (error instanceof Error && error.name === 'TimeoutError') return 'timeout'
+  if (error instanceof Error && error.name === 'AbortError') return 'cancelled'
+  return 'network'
 }
 
 /** Case-insensitive lookup in a `$batch` sub-response's plain headers object. */
@@ -189,6 +206,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
   const fetchImpl: typeof fetch = config.fetch ?? ((input, init) => globalThis.fetch(input, init))
   const sleep = config.sleep ?? defaultSleep
   const maxRetries = config.maxRetries ?? 3
+  const requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   const limiter = createLimiter(config.maxConcurrency ?? 8)
   const { logger } = config
 
@@ -272,8 +290,10 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     body: unknown,
     signal: AbortSignal | undefined,
   ): Promise<Response> {
-    return limiter.run(() =>
-      fetchImpl(url, {
+    return limiter.run(() => {
+      // The clock starts here, once a slot is free. The response body reads under the same signal.
+      const timeout = AbortSignal.timeout(requestTimeoutMs)
+      return fetchImpl(url, {
         method,
         headers: {
           Authorization: `Bearer ${token}`,
@@ -285,9 +305,9 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
         // same-origin hop, the token) somewhere the host check never saw, so it fails as a network error.
         redirect: 'error',
         credentials: 'omit',
-        signal: signal ?? null,
-      }),
-    )
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      })
+    }, signal)
   }
 
   /** Maps a non-OK response (after retries) to the matching typed error. */
@@ -311,6 +331,15 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
           },
         )
     }
+  }
+
+  function timeoutError(api: ApiKind, maskedUrl: string): HttpError {
+    return new HttpError(
+      'timeout',
+      api,
+      `No complete response from ${maskedUrl} within ${String(requestTimeoutMs / 1000)} s.`,
+      { url: maskedUrl },
+    )
   }
 
   function networkError(api: ApiKind, maskedUrl: string): HttpError {
@@ -371,22 +400,26 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
         await sleep(retryDelayMs(response.headers.get('Retry-After'), attempt), options.signal)
       }
     } catch (error) {
-      if (isAbort(error, options.signal)) {
+      const cause = failureCause(error, options.signal)
+      if (cause === 'cancelled') {
         logger.finish(id, { state: 'cancelled' })
         throw error
       }
-      return fail(networkError(api, maskedUrl))
+      return fail(cause === 'timeout' ? timeoutError(api, maskedUrl) : networkError(api, maskedUrl))
     }
 
     let text: string
     try {
       text = await response.text()
     } catch (error) {
-      if (isAbort(error, options.signal)) {
+      const cause = failureCause(error, options.signal)
+      if (cause === 'cancelled') {
         logger.finish(id, { state: 'cancelled' })
         throw error
       }
-      return fail(networkError(api, maskedUrl), response.status)
+      const failure =
+        cause === 'timeout' ? timeoutError(api, maskedUrl) : networkError(api, maskedUrl)
+      return fail(failure, response.status)
     }
     const bytes = new TextEncoder().encode(text).byteLength
 

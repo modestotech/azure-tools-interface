@@ -7,6 +7,7 @@ export type HttpErrorKind =
   | 'throttled'
   | 'http'
   | 'network'
+  | 'timeout'
   | 'invalid-request'
   | 'invalid-response'
   | 'no-token'
