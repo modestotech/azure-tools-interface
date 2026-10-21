@@ -15,6 +15,9 @@ const LAYERS = [
   { folder: 'lib', forbidden: ['app', 'services', 'domain', 'views', 'scripts', 'components'] },
   { folder: 'services', forbidden: ['app', 'domain', 'views', 'scripts', 'components'] },
   { folder: 'domain', forbidden: ['app', 'views', 'scripts', 'components'] },
+  { folder: 'views', forbidden: ['app', 'scripts'] },
+  { folder: 'scripts', forbidden: ['app', 'views', 'components'] },
+  { folder: 'components', forbidden: ['app', 'views', 'scripts'] },
 ]
 
 function layerRule({ folder, forbidden }) {

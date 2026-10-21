@@ -151,7 +151,7 @@ tests/
   security/            # Node-side guards: source scan for network/storage use, production-build checks
 ```
 
-Layering is one-way: `views` / `scripts` → `domain` → `services` → `lib`. Views never call fetch directly and never parse raw ARM/Graph shapes; they consume the normalized domain model. ESLint enforces the `lib` / `services` / `domain` boundaries (`LAYERS` in `eslint.config.js`; tests are exempt).
+Layering is one-way: `views` / `scripts` → `domain` → `services` → `lib`. Views never call fetch directly and never parse raw ARM/Graph shapes; they consume the normalized domain model. ESLint enforces the boundaries of `lib`, `services`, `domain`, `views`, `scripts` and `components` (`LAYERS` in `eslint.config.js`; tests are exempt): only `app/` may import from `app/`.
 
 Services take an `HttpClient` as a parameter and never import from `app/`. The single instance lives in `app/session/httpClient.ts` and is passed in by the app shell; tests pass their own.
 
@@ -166,7 +166,7 @@ Guidelines from `TECH_DEBT_PLAN_M1.md`:
 
 New visualizations and analyses plug in through registries, not by editing the app shell.
 
-- A **view** exports `{ id, title, description, icon, component }` and is added to `views/registry.ts`. It receives the domain model via hooks (e.g. `useAccessModel()`).
+- A **view** exports `{ id, title, description, icon, component }` (`views/types.ts`) and is added to `views/registry.ts`. The component is lazy (`React.lazy`) and receives the model as a prop (`{ model }`): the shell calls `useAccessModel()` once, so views don't each rebuild it. The model fills in while loading (`model.pending`).
 - A **script** exports `{ id, title, description, run(model, params) => ScriptResult }` and is added to `scripts/registry.ts`. Scripts are pure functions over the domain model (e.g. "operations with no auth policy", "principals with access to >N operations", "groups granting access with external members"). Results render through a generic table/JSON output component.
 - Navigation and the landing page are generated from the registries.
 
