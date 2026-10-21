@@ -72,7 +72,7 @@ Required permissions for the signed-in user: `Reader` (or `API Management Servic
 - **Apache ECharts** (via `echarts-for-react`) for charts/summaries
 - **TanStack Table** for tabular views and exports (CSV/JSON)
 - **Tailwind CSS** + **shadcn/ui** for UI components
-- **fast-xml-parser** for APIM policy XML
+- **fast-xml-parser** for APIM policy XML, with **fast-xml-validator** to reject malformed XML (fast-xml-parser's own validator is deprecated)
 - **Zod** for validating API responses at the boundary
 - **Vitest** + **Testing Library** for tests; **MSW** to mock ARM/Graph in tests and local dev
 - Package manager: **pnpm**
@@ -126,6 +126,10 @@ src/
   domain/
     model.ts           # normalized domain types (see below)
     policy-parser/     # APIM policy XML → access rules
+      xmlTree.ts       #   typed tree over fast-xml-parser's ordered output (parseXml, toXml, child helpers)
+      compose.ts       #   composeSection: <base /> composition, one function for all sections
+      elements.ts      #   the element table (supported / ignored / unresolved) and the extractors
+      analyze.ts       #   analyzeOperationPolicy: effective inbound/backend rules of one operation
     mapper/            # joins APIM rules with Entra objects into the access graph
   views/               # one folder per visualization, registered in views/registry.ts
     access-graph/
@@ -145,8 +149,8 @@ Services take an `HttpClient` as a parameter and never import from `app/`. The s
 
 Module-level state in `lib/` is limited to `requestLogStore` (`lib/http/requestLog.ts`) and the mask cache (`lib/http/mask.ts`). `clearSession()` wipes both explicitly. Any other app-wide instance lives in `app/` and registers with `onClearSession()`.
 
-Guidelines for the layers still to be built (from `TECH_DEBT_PLAN_M1.md`):
-- **Policy parser:** wrap fast-xml-parser's ordered output in a typed tree helper before writing extractors. Keep the supported / response-only / unresolved element lists in one data table. Apply `<base />` composition through one function for all four sections.
+Guidelines from `TECH_DEBT_PLAN_M1.md`:
+- **Policy parser** (built): extractors read the typed tree in `xmlTree.ts`, never fast-xml-parser's raw arrays. Element handling lives only in the `ELEMENTS` table in `elements.ts`. `<base />` composition goes through `composeSection()` for every section.
 - **Findings:** computed once in `domain/` (no auth, HTTP backend, no outbound auth, unresolved rules, …). Scripts filter or present them and never re-implement the checks. Keep `buildAccessModel()` pure and separate from the fetching in `useAccessModel()`.
 - **Views:** registry entries are lazy-loaded (`React.lazy`), because React Flow, elkjs and ECharts are heavy. The CSP is defined once and used for both the `<meta>` tag and `staticwebapp.config.json`.
 
@@ -207,7 +211,7 @@ The parser turns effective policy XML into `AccessRule`s. Key behaviors:
   - A required role that doesn't exist in the API's `appRoles` is a finding
 - Classify every element in `inbound` and `backend`:
   - **Supported** → a rule.
-  - **Response-only** (`set-header` other than `Authorization`, `rate-limit*`, `quota*`, `cors`, `<base />`) → ignored.
+  - **Response-only** (`set-header` other than `Authorization`, `rate-limit*`, `quota*`, `cors`, `<base />`) → ignored. So is `<forward-request />`: it sends the call to the backend chosen elsewhere and is in nearly every global `backend` section.
   - **Anything else** → an `UnresolvedRule` with the raw XML snippet, shown in the UI as "needs manual review". This includes `<choose>`, `<include-fragment>`, `{{named values}}`, `validate-azure-ad-token`, `send-request`, `set-backend-service base-url` and `@(...)` expressions in access or routing attributes. Never silently drop it or guess.
 - `outbound` and `on-error` don't affect access or routing and are not analyzed. Their `@(...)` expressions must not produce `UnresolvedRule`s.
 - Operations with no authentication policy at any scope are flagged explicitly.

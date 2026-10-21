@@ -100,7 +100,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 
 **M3 — `domain/` (pure TS; this is the bulk of the tests)**
 - `model.ts`: the types listed in CLAUDE.md, as discriminated unions.
-- `policy-parser/`:
+- `policy-parser/` (**done**):
   - fast-xml-parser configured to *preserve order* (needed for `<base/>` placement and "last `set-backend-service` wins")
   - effective-policy composition per section: global → API → operation. A missing `<base/>` drops the parent's section, and that gets recorded.
   - extractors (§1 pattern): `validate-jwt`, `set-backend-service backend-id`, `authentication-managed-identity`
