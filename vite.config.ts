@@ -63,6 +63,19 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          // React rarely changes between releases, so it gets its own long-cached file. This also
+          // keeps the app's own chunk under Vite's 500 kB warning.
+          groups: [
+            { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
