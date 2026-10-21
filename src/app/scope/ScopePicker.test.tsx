@@ -23,7 +23,13 @@ function renderPicker() {
   return user
 }
 
-const pick = (label: string) => screen.getByLabelText(label)
+const pick = (label: string) => screen.getByRole('combobox', { name: label })
+
+/** Opens a picker and chooses the option with this name. */
+async function choose(user: ReturnType<typeof userEvent.setup>, label: string, option: RegExp) {
+  await user.click(pick(label))
+  await user.click(await screen.findByRole('option', { name: option }))
+}
 
 describe('ScopePicker', () => {
   it('waits for an ARM token before listing anything', () => {
@@ -41,19 +47,21 @@ describe('ScopePicker', () => {
     await waitFor(() => {
       expect(pick('Subscription')).toBeEnabled()
     })
-    await user.selectOptions(pick('Subscription'), TEST_SUB)
+    await choose(user, 'Subscription', /^Contoso Integration/)
     expect(sessionStore.getState().subscriptionId).toBe(TEST_SUB)
+    expect(pick('Subscription')).toHaveTextContent('Contoso Integration')
 
     await waitFor(() => {
       expect(pick('APIM instance')).toBeEnabled()
     })
-    await user.selectOptions(pick('APIM instance'), SERVICE_ID)
+    await choose(user, 'APIM instance', /^apim-contoso/)
+    expect(selectionStore.getState().service?.id).toBe(SERVICE_ID)
 
     await waitFor(() => {
       expect(pick('API')).toBeEnabled()
     })
-    expect(screen.getByRole('option', { name: 'Orders API (/orders)' })).toBeInTheDocument()
-    await user.selectOptions(pick('API'), 'orders-api')
+    await choose(user, 'API', /^Orders API \(\/orders\)/)
+    expect(selectionStore.getState().api?.name).toBe('orders-api')
 
     await waitFor(
       () => {

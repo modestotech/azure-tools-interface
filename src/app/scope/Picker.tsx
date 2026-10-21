@@ -1,10 +1,6 @@
+import { Combobox, type ComboboxOption } from '@/components/Combobox'
 import { Label } from '@/components/ui/label'
 import type { ResourceResult } from '@/services/result'
-
-export interface PickerOption {
-  readonly value: string
-  readonly label: string
-}
 
 interface PickerProps<T> {
   readonly id: string
@@ -12,12 +8,24 @@ interface PickerProps<T> {
   /** Why the picker can't be used yet (the step before isn't done); undefined when it can. */
   readonly waitingFor: string | undefined
   readonly result: ResourceResult<readonly T[]> | undefined
-  readonly toOption: (item: T) => PickerOption
+  readonly toOption: (item: T) => ComboboxOption
   readonly value: string | undefined
   readonly onChange: (item: T | undefined) => void
 }
 
-/** One step of the scope picker: a select over a loaded list, with its own loading and error state. */
+/** What to show under the picker: why it's waiting, loading, an error, or nothing to pick. */
+function statusText(
+  waitingFor: string | undefined,
+  result: ResourceResult<readonly unknown[]> | undefined,
+) {
+  if (waitingFor) return waitingFor
+  if (result === undefined) return 'Loading…'
+  if (result.status === 'forbidden' || result.status === 'error') return result.error.message
+  if (result.status === 'empty' || result.data.length === 0) return 'None found.'
+  return undefined
+}
+
+/** One step of the scope picker: a searchable list with its own loading and error state. */
 export function Picker<T>({
   id,
   label,
@@ -29,38 +37,25 @@ export function Picker<T>({
 }: PickerProps<T>) {
   const items = result?.status === 'ok' ? result.data : []
   const options = items.map(toOption)
-  const status = waitingFor
-    ? waitingFor
-    : result === undefined
-      ? 'Loading…'
-      : result.status === 'ok'
-        ? items.length === 0
-          ? 'None found.'
-          : undefined
-        : result.status === 'empty'
-          ? 'None found.'
-          : result.error.message
+  const status = statusText(waitingFor, result)
   const failed = result?.status === 'forbidden' || result?.status === 'error'
+  const labelId = `${id}-label`
 
   return (
-    <div className="space-y-1">
-      <Label htmlFor={id}>{label}</Label>
-      <select
+    <div className="min-w-0 space-y-1">
+      <Label id={labelId} htmlFor={id}>
+        {label}
+      </Label>
+      <Combobox
         id={id}
-        className="border-input focus-visible:ring-ring/50 h-9 w-full rounded-md border bg-transparent px-3 text-sm outline-none focus-visible:ring-[3px] disabled:opacity-50"
+        labelledBy={labelId}
+        options={options}
+        value={value}
         disabled={options.length === 0}
-        value={value ?? ''}
-        onChange={(event) => {
-          onChange(items[options.findIndex((option) => option.value === event.target.value)])
+        onChange={(picked) => {
+          onChange(items[options.findIndex((option) => option.value === picked)])
         }}
-      >
-        <option value="">Choose…</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      />
       {status && (
         <p className={failed ? 'text-destructive text-sm' : 'text-muted-foreground text-xs'}>
           {status}
