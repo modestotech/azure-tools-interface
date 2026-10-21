@@ -1,4 +1,7 @@
 {
   "files": [],
-  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }],
+  // Not used by tsc (the references do the work). The shadcn CLI reads aliases from here; without
+  // it, `@/…` was written as a literal folder and `cn` was installed from npm.
+  "compilerOptions": { "paths": { "@/*": ["./src/*"] } }
 }

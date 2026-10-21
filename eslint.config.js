@@ -59,6 +59,12 @@ export default defineConfig([
   },
   ...LAYERS.map(layerRule),
   {
+    // shadcn/ui sources, copied by its CLI: they export style variants (buttonVariants, …) next to
+    // the component. Kept as generated so later `shadcn add` updates stay easy to compare.
+    files: ['src/components/ui/**/*.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
     files: ['eslint.config.js'],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },
