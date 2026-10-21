@@ -114,7 +114,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - `useAccessModel()` (**done**): orchestrates the queries and builds the model incrementally, so views render partial data with progress (`model.pending`). **M3 is complete.**
 
 **M4 — App shell and session screen**
-- Token paste screen:
+- Token paste screen (**done**; the CSP it promises is the remaining M4 item below):
   - two token fields, plus tenant ID (prefilled from the ARM token's `tid`); the subscription is picked in the scope picker
   - decoded claim cards with warnings
   - copyable `az` commands (prefilled with the tenant ID)
