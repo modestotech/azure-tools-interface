@@ -30,6 +30,19 @@ describe('request log store', () => {
     expect(store.getState().counters).toEqual({ inFlight: 0, finished: 1, errors: 0, retries: 1 })
   })
 
+  it('keeps the start label unless finish replaces it', () => {
+    const store = createRequestLogStore()
+    const log = store.getState()
+    const kept = log.start({ ...request, label: '$batch ×3' })
+    const replaced = log.start({ ...request, label: '$batch ×3' })
+    log.finish(kept, { state: 'ok' })
+    log.finish(replaced, { state: 'ok', label: '$batch ×3 · 1 failed' })
+    expect(store.getState().entries.map((e) => e.label)).toEqual([
+      '$batch ×3',
+      '$batch ×3 · 1 failed',
+    ])
+  })
+
   it('counts errors', () => {
     const store = createRequestLogStore()
     const id = store.getState().start(request)

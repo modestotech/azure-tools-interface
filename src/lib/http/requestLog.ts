@@ -43,6 +43,8 @@ export interface RequestStart {
 
 export interface RequestFinish {
   readonly state: Exclude<RequestState, 'pending'>
+  /** Replaces the start label, e.g. to add how many `$batch` sub-responses failed. */
+  readonly label?: string | undefined
   readonly status?: number | undefined
   readonly bytes?: number | undefined
   readonly error?: string | undefined
@@ -173,6 +175,7 @@ export function createRequestLogStore(
         entries: update(entries, id, (e) => ({
           ...e,
           state: result.state,
+          label: result.label ?? e.label,
           status: result.status ?? e.status,
           bytes: result.bytes,
           error: result.error,

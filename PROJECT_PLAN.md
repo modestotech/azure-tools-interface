@@ -80,7 +80,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - Layering is enforced by `no-restricted-imports` per folder (`LAYERS` in `eslint.config.js`), for both `@/` and relative imports. Tests are exempt.
   - CSP: no milestone owned it. Now in M8 (below).
 - **Code quality review follow-ups (open, 2026-10-18), most severe first.** Fix them before M2 builds on the client:
-  - Validation failures after `send()` are logged as `ok`. `getAllPages` and `batchChunk` throw `invalid-response` (with no `url`/`status`) after the log entry has already finished. Pass the Zod schema into `send()` so the failure goes through `fail()`. Also show how many `$batch` sub-responses failed on the log line.
+  - ~~Validation failures after `send()` are logged as `ok`.~~ Done: `send()` validates against a Zod schema before finishing the log entry, and `getJson` / `getJsonOrNull` / `getAllPages` accept a `schema` for services. A `$batch` log line shows how many sub-responses failed.
   - Requests have no timeout. A hung `fetch` holds a limiter slot until the browser gives up. Combine the caller's signal with `AbortSignal.timeout(…)` and add an HttpError kind `timeout`. Queued limiter tasks should drop out when their signal aborts.
   - `send()` (85 lines) handles the guards, logging, retries, body reading, error mapping and JSON parsing. Split it into `fetchWithRetry()` and `readResponse()`, which also removes the duplicated abort/network catch.
   - `batchChunk`: extract a pure `partitionBatchResponses()`, comment the shared retry-budget rule, rename `r`/`p`/`retry`/`wait`, and treat unknown or duplicate response ids as `invalid-response` instead of skipping them.

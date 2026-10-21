@@ -238,7 +238,7 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 
 ## Conventions
 
-- TypeScript strict, no `any`; validate external responses with Zod in `services/`.
+- TypeScript strict, no `any`; validate external responses with Zod in `services/` by passing the schema to the client (`getJson(api, url, { schema })`, likewise `getJsonOrNull` and `getAllPages` with the item schema). Don't `parse` the result afterwards: the client logs a mismatch as `error`, while a later parse would leave the request logged as `ok`.
 - Functional React components and hooks; keep components presentational and logic in hooks/domain.
 - All data loading through TanStack Query. All query keys come from `services/queryKeys.ts`; never write key arrays inline.
 - Large tenants: virtualize long lists/tables, lazy-load group members. The one-API scope (see Project overview) keeps request volume bounded.

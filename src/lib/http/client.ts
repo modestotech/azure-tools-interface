@@ -42,6 +42,15 @@ export interface RequestOptions {
   queryKey?: readonly unknown[] | undefined
 }
 
+/** Request options with a Zod schema the response must match before the request counts as `ok`. */
+export interface ValidatedRequestOptions<T> extends RequestOptions {
+  /**
+   * For `getAllPages`, the schema of one item. A mismatch fails the request as `invalid-response`
+   * and its log entry finishes as `error`.
+   */
+  schema: z.ZodType<T>
+}
+
 export interface BatchRequest {
   readonly id: string
   /** Path relative to the Graph `baseUrl` (`/v1.0`), starting with `/`. */
@@ -55,15 +64,28 @@ export interface BatchResponse {
 }
 
 export interface HttpClient {
-  /** GET one resource; returns parsed JSON. Validate it with Zod in `services/`. */
+  /**
+   * GET one resource; returns parsed JSON. `services/` pass a `schema`, so a response of the wrong
+   * shape is logged as an error rather than `ok`.
+   */
   getJson(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown>
+  getJson<T>(api: ApiKind, url: string, options: ValidatedRequestOptions<T>): Promise<T>
   /**
    * Like `getJson`, but a 404 resolves to `null` and is logged as `empty`, not as an error.
    * For resources whose absence is a normal answer, e.g. "no policy at that scope".
    */
   getJsonOrNull(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown>
-  /** GET a collection, following `nextLink` (ARM) / `@odata.nextLink` (Graph); returns all `value` items. */
+  getJsonOrNull<T>(
+    api: ApiKind,
+    url: string,
+    options: ValidatedRequestOptions<T>,
+  ): Promise<T | null>
+  /**
+   * GET a collection, following `nextLink` (ARM) / `@odata.nextLink` (Graph); returns all `value`
+   * items. With a `schema`, every item is validated as part of its page.
+   */
   getAllPages(api: ApiKind, url: string, options?: RequestOptions): Promise<unknown[]>
+  getAllPages<T>(api: ApiKind, url: string, options: ValidatedRequestOptions<T>): Promise<T[]>
   /**
    * Graph `$batch` of GETs, chunked by 20. Sub-requests answering 429 / 503 are retried. Returns exactly one
    * response per request, in request order. Ids must be unique; a response missing from Graph's answer
@@ -76,11 +98,21 @@ export interface HttpClient {
 
 const MAX_PAGES = 1000
 
-const pageSchema = z.looseObject({
-  value: z.array(z.unknown()),
-  nextLink: z.string().nullish(),
-  '@odata.nextLink': z.string().nullish(),
-})
+/** Accepts any JSON; used when the caller passes no schema. */
+const ANY_JSON = z.unknown()
+
+function schemaOf<T>(options: { schema?: z.ZodType<T> | undefined }): z.ZodType<T> {
+  // Without a schema the overloads type the result as `unknown`, so treating any JSON as T is sound.
+  return options.schema ?? (ANY_JSON as z.ZodType<T>)
+}
+
+function pageSchemaOf<T>(item: z.ZodType<T>) {
+  return z.looseObject({
+    value: z.array(item),
+    nextLink: z.string().nullish(),
+    '@odata.nextLink': z.string().nullish(),
+  })
+}
 
 const batchResponseSchema = z.object({
   responses: z.array(
@@ -92,6 +124,34 @@ const batchResponseSchema = z.object({
     }),
   ),
 })
+
+/** The `$batch` shape, plus: every request sent in this POST has a sub-response. */
+function batchResponseSchemaFor(sent: readonly BatchRequest[]) {
+  return batchResponseSchema.superRefine((data, ctx) => {
+    const answered = new Set(data.responses.map((response) => response.id))
+    const missing = sent.filter((request) => !answered.has(request.id)).length
+    if (missing > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `$batch response is missing ${String(missing)} of ${String(sent.length)} sub-responses.`,
+      })
+    }
+  })
+}
+
+/** Log label for a finished `$batch` POST, e.g. `$batch ×12 · 3 failed`. */
+function batchLabel(sent: number, statuses: readonly number[]): string {
+  const failed = statuses.filter((status) => status >= 400).length
+  const label = `$batch ×${String(sent)}`
+  return failed > 0 ? `${label} · ${String(failed)} failed` : label
+}
+
+/** A short description of why a response failed its schema. Masked by the caller. */
+function schemaMismatch(error: z.ZodError): string {
+  const issue = error.issues[0]
+  const at = issue && issue.path.length > 0 ? ` at ${issue.path.map(String).join('.')}` : ''
+  return `Unexpected response shape${at}: ${issue?.message ?? 'invalid'}`
+}
 
 const errorBodySchema = z.looseObject({
   error: z.looseObject({ code: z.string().optional(), message: z.string().optional() }),
@@ -187,17 +247,21 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     }
   }
 
-  interface SendExtra {
+  interface SendExtra<T> {
+    /** The parsed JSON must match it, or the request fails as `invalid-response`. */
+    schema: z.ZodType<T>
     /** Extra text for the log line, e.g. `$batch ×12`. */
     label?: string
-    /** Resolve a 404 to `null` and log it as `empty` instead of failing. */
-    notFoundIsEmpty?: boolean
+    /** Log label once the response is validated; replaces `label`. */
+    finishLabel?: (data: T) => string
+    /** Resolve a 404 to this value and log it as `empty` instead of failing. */
+    notFound?: { value: T }
     /** Shared retry budget; defaults to a fresh one with `maxRetries`. */
     retryBudget?: RetryBudget
   }
 
-  interface SendResult {
-    json: unknown
+  interface SendResult<T> {
+    json: T
     headers: Headers
   }
 
@@ -259,15 +323,18 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     )
   }
 
-  /** Guards, logs and sends one request, retrying 429 / 503 within the budget. */
-  async function send(
+  /**
+   * Guards, logs and sends one request, retrying 429 / 503 within the budget. The log entry finishes
+   * as `ok` only once the response has passed `extra.schema`.
+   */
+  async function send<T>(
     api: ApiKind,
     method: HttpMethod,
     url: string,
     body: unknown,
     options: RequestOptions,
-    extra: SendExtra = {},
-  ): Promise<SendResult> {
+    extra: SendExtra<T>,
+  ): Promise<SendResult<T>> {
     assertReadOnly(api, method, url, body)
     assertHost(api, url)
     const token = requireValidToken(api)
@@ -323,9 +390,9 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     }
     const bytes = new TextEncoder().encode(text).byteLength
 
-    if (response.status === 404 && extra.notFoundIsEmpty) {
+    if (response.status === 404 && extra.notFound) {
       logger.finish(id, { state: 'empty', status: 404, bytes })
-      return { json: null, headers: response.headers }
+      return { json: extra.notFound.value, headers: response.headers }
     }
     if (!response.ok) {
       return fail(toHttpError(api, response, text, maskedUrl), response.status, bytes)
@@ -343,32 +410,49 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
         return fail(error, response.status, bytes)
       }
     }
-    logger.finish(id, { state: 'ok', status: response.status, bytes })
-    return { json, headers: response.headers }
+    const parsed = extra.schema.safeParse(json)
+    if (!parsed.success) {
+      const error = new HttpError('invalid-response', api, mask(schemaMismatch(parsed.error)), {
+        status: response.status,
+        url: maskedUrl,
+      })
+      return fail(error, response.status, bytes)
+    }
+    logger.finish(id, {
+      state: 'ok',
+      status: response.status,
+      bytes,
+      label: extra.finishLabel?.(parsed.data),
+    })
+    return { json: parsed.data, headers: response.headers }
   }
 
-  async function getJson(api: ApiKind, url: string, options: RequestOptions = {}) {
-    return (await send(api, 'GET', url, undefined, options)).json
+  type CallOptions<T> = RequestOptions & { schema?: z.ZodType<T> | undefined }
+
+  async function getJson<T>(api: ApiKind, url: string, options: CallOptions<T> = {}) {
+    const extra = { schema: schemaOf(options) }
+    return (await send(api, 'GET', url, undefined, options, extra)).json
   }
 
-  async function getJsonOrNull(api: ApiKind, url: string, options: RequestOptions = {}) {
-    return (await send(api, 'GET', url, undefined, options, { notFoundIsEmpty: true })).json
+  async function getJsonOrNull<T>(api: ApiKind, url: string, options: CallOptions<T> = {}) {
+    const extra = { schema: schemaOf(options).nullable(), notFound: { value: null } }
+    return (await send(api, 'GET', url, undefined, options, extra)).json
   }
 
-  async function getAllPages(api: ApiKind, url: string, options: RequestOptions = {}) {
-    const items: unknown[] = []
+  async function getAllPages<T>(api: ApiKind, url: string, options: CallOptions<T> = {}) {
+    const pageSchema = pageSchemaOf(schemaOf(options))
+    const items: T[] = []
     let next: string | null | undefined = url
     for (let page = 0; next; page++) {
       if (page >= MAX_PAGES) {
         throw new HttpError('invalid-response', api, `Stopped after ${String(MAX_PAGES)} pages.`)
       }
-      const json = await getJson(api, next, options)
-      const parsed = pageSchema.safeParse(json)
-      if (!parsed.success) {
-        throw new HttpError('invalid-response', api, `Expected a collection from ${mask(next)}.`)
-      }
-      items.push(...parsed.data.value)
-      next = parsed.data.nextLink ?? parsed.data['@odata.nextLink']
+      const json: z.output<typeof pageSchema> = await getJson(api, next, {
+        ...options,
+        schema: pageSchema,
+      })
+      items.push(...json.value)
+      next = json.nextLink ?? json['@odata.nextLink']
     }
     return items
   }
@@ -382,19 +466,21 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     let pending = chunk
     for (let attempt = 0; pending.length > 0; attempt++) {
       const body = { requests: pending.map((r) => ({ id: r.id, method: 'GET', url: r.url })) }
-      const label = `$batch ×${String(pending.length)}`
+      const sent = pending.length
       const { json } = await send('graph', 'POST', GRAPH_BATCH_URL, body, options, {
-        label,
+        schema: batchResponseSchemaFor(pending),
+        label: batchLabel(sent, []),
+        finishLabel: (data) =>
+          batchLabel(
+            sent,
+            data.responses.map((r) => r.status),
+          ),
         retryBudget,
       })
-      const parsed = batchResponseSchema.safeParse(json)
-      if (!parsed.success) {
-        throw new HttpError('invalid-response', 'graph', 'Unexpected $batch response shape.')
-      }
       let wait = 0
       const retry: BatchRequest[] = []
       const pendingById = new Map(pending.map((p) => [p.id, p]))
-      for (const r of parsed.data.responses) {
+      for (const r of json.responses) {
         const request = pendingById.get(r.id)
         if (!request) continue
         if (isRetryableStatus(r.status) && retryBudget.left > 0) {
@@ -403,14 +489,6 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
         } else {
           results.set(r.id, { id: r.id, status: r.status, body: r.body })
         }
-      }
-      const missing = pending.filter((p) => !results.has(p.id) && !retry.includes(p))
-      if (missing.length > 0) {
-        throw new HttpError(
-          'invalid-response',
-          'graph',
-          `$batch response is missing ${String(missing.length)} of ${String(pending.length)} sub-responses.`,
-        )
       }
       pending = retry
       if (pending.length > 0) {

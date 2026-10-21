@@ -6,6 +6,7 @@ export {
   type HttpClient,
   type HttpClientConfig,
   type RequestOptions,
+  type ValidatedRequestOptions,
 } from './client'
 export {
   forbiddenError,

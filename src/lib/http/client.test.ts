@@ -1,4 +1,5 @@
 import { delay, http, HttpResponse } from 'msw'
+import { z } from 'zod'
 import { APIM_API_VERSION } from '@/services/arm/apiVersion'
 import { ARM, GRAPH } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
@@ -140,6 +141,71 @@ describe('createHttpClient', () => {
     server.use(http.get(`${ARM}/forbidden`, () => new HttpResponse(null, { status: 403 })))
     const error = await caught(setup().client.getJsonOrNull('arm', `${ARM}/forbidden`))
     expect(error.kind).toBe('forbidden')
+  })
+
+  it('returns schema-validated data, and logs a mismatch as an error with the masked URL', async () => {
+    const schema = z.object({ name: z.string() })
+    server.use(
+      http.get(`${ARM}/subscriptions/:sub/good`, () => HttpResponse.json({ name: 'apim-1' })),
+      http.get(`${ARM}/subscriptions/:sub/bad`, () => HttpResponse.json({ name: 42 })),
+    )
+    const { client, log } = setup()
+
+    await expect(
+      client.getJson('arm', `${ARM}/subscriptions/${TEST_SUB}/good`, { schema }),
+    ).resolves.toEqual({ name: 'apim-1' })
+
+    const error = await caught(
+      client.getJson('arm', `${ARM}/subscriptions/${TEST_SUB}/bad`, { schema }),
+    )
+    expect(error).toMatchObject({
+      kind: 'invalid-response',
+      status: 200,
+      url: `${ARM}/subscriptions/{sub}/bad`,
+    })
+    expect(error.message).toContain('at name')
+    expect(log.getState().entries.map((e) => [e.state, e.errorKind])).toEqual([
+      ['ok', undefined],
+      ['error', 'invalid-response'],
+    ])
+  })
+
+  it('validates getJsonOrNull bodies, but not an expected 404', async () => {
+    const schema = z.object({ value: z.string() })
+    server.use(
+      http.get(`${ARM}/missing`, () => new HttpResponse(null, { status: 404 })),
+      http.get(`${ARM}/bad`, () => HttpResponse.json({})),
+    )
+    const { client, log } = setup()
+    await expect(client.getJsonOrNull('arm', `${ARM}/missing`, { schema })).resolves.toBeNull()
+    expect((await caught(client.getJsonOrNull('arm', `${ARM}/bad`, { schema }))).kind).toBe(
+      'invalid-response',
+    )
+    expect(log.getState().entries.map((e) => e.state)).toEqual(['empty', 'error'])
+  })
+
+  it('logs a page that is not a collection, or holds an invalid item, as an error', async () => {
+    server.use(
+      http.get(`${ARM}/not-a-list`, () => HttpResponse.json({ items: [] })),
+      http.get(`${ARM}/list`, ({ request }) =>
+        new URL(request.url).searchParams.has('page')
+          ? HttpResponse.json({ value: ['b', 2] })
+          : HttpResponse.json({ value: ['a'], nextLink: `${ARM}/list?page=2` }),
+      ),
+    )
+    const { client, log } = setup()
+
+    const notList = await caught(client.getAllPages('arm', `${ARM}/not-a-list`))
+    expect(notList).toMatchObject({
+      kind: 'invalid-response',
+      status: 200,
+      url: `${ARM}/not-a-list`,
+    })
+
+    const badItem = await caught(client.getAllPages('arm', `${ARM}/list`, { schema: z.string() }))
+    expect(badItem).toMatchObject({ kind: 'invalid-response', url: `${ARM}/list?page=2` })
+    expect(badItem.message).toContain('at value.1')
+    expect(log.getState().entries.map((e) => e.state)).toEqual(['error', 'ok', 'error'])
   })
 
   it('refuses an expired token before sending anything, with the az command to copy', async () => {
@@ -390,7 +456,28 @@ describe('batch', () => {
     expect(posts).toBe(4)
     // Whole-POST retries are counted on their log line; sub-request retries appear as new $batch lines.
     expect(log.getState().counters.retries).toBe(2)
-    expect(log.getState().entries.map((e) => e.label)).toEqual(['$batch ×1', '$batch ×1'])
+    expect(log.getState().entries.map((e) => e.label)).toEqual([
+      '$batch ×1 · 1 failed',
+      '$batch ×1 · 1 failed',
+    ])
+  })
+
+  it('shows on the log line how many sub-responses failed', async () => {
+    server.use(
+      http.post(GRAPH_BATCH_URL, () =>
+        HttpResponse.json({
+          responses: [
+            { id: 'a', status: 200, body: {} },
+            { id: 'b', status: 403, body: {} },
+            { id: 'c', status: 404, body: {} },
+          ],
+        }),
+      ),
+    )
+    const { client, log } = setup()
+    const ids = ['a', 'b', 'c']
+    await client.batch(ids.map((id) => ({ id, url: `/groups/${id}` })))
+    expect(log.getState().entries[0]).toMatchObject({ state: 'ok', label: '$batch ×3 · 2 failed' })
   })
 
   it('rejects duplicate ids across chunks before sending anything', async () => {
@@ -406,13 +493,18 @@ describe('batch', () => {
         HttpResponse.json({ responses: [{ id: 'a', status: 200, body: {} }] }),
       ),
     )
+    const { client, log } = setup()
     const error = await caught(
-      setup().client.batch([
+      client.batch([
         { id: 'a', url: '/groups/a' },
         { id: 'b', url: '/groups/b' },
       ]),
     )
-    expect(error.kind).toBe('invalid-response')
+    expect(error).toMatchObject({ kind: 'invalid-response', status: 200, url: GRAPH_BATCH_URL })
     expect(error.message).toContain('1 of 2')
+    expect(log.getState().entries[0]).toMatchObject({
+      state: 'error',
+      errorKind: 'invalid-response',
+    })
   })
 })
