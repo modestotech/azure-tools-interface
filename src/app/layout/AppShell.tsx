@@ -1,12 +1,10 @@
-import { Suspense } from 'react'
-import { useAccessModel } from '@/domain'
+import { lazy, Suspense } from 'react'
 import { cn } from '@/lib/utils'
 import { views } from '@/views/registry'
 import { ScopePicker } from '../scope/ScopePicker'
 import { useSelection } from '../session/selectionStore'
 import { TokenScreen } from '../session/TokenScreen'
 import { DemoBanner } from './DemoBanner'
-import { Landing } from './Landing'
 import { LogDock } from './LogDock'
 import { uiStore, useUi } from './uiStore'
 
@@ -38,17 +36,21 @@ function Nav() {
   )
 }
 
-/** The open view, given the model once; falls back to the landing page. */
+/** The analysis, with the parser and mapper, loads only once an API is chosen. */
+const Analysis = lazy(() => import('./Analysis'))
+
 function Content() {
-  const service = useSelection((state) => state.service)
   const api = useSelection((state) => state.api)
-  const model = useAccessModel(service, api)
-  const activeId = useUi((state) => state.activeViewId)
-  const view = views.find((item) => item.id === activeId)
-  if (!view || !model) return <Landing />
+  if (!api) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        Choose a subscription, an APIM instance and an API under Session and scope to start.
+      </p>
+    )
+  }
   return (
-    <Suspense fallback={<p className="text-muted-foreground text-sm">Loading view…</p>}>
-      <view.component model={model} />
+    <Suspense fallback={<p className="text-muted-foreground text-sm">Loading the analysis…</p>}>
+      <Analysis />
     </Suspense>
   )
 }

@@ -23,7 +23,9 @@ describe('AppShell', () => {
     renderShell()
     expect(screen.getByText('Session and scope').closest('details')).toHaveAttribute('open')
     expect(screen.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByText('No views are registered yet.')).toBeInTheDocument()
+    expect(
+      screen.getByText(/Choose a subscription, an APIM instance and an API/),
+    ).toBeInTheDocument()
   })
 
   it('docks the request log with masked lines and counters, and folds it', async () => {
