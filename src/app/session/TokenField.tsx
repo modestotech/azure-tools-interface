@@ -29,14 +29,14 @@ export function TokenField({ api }: { api: ApiKind }) {
         {label} token <span className="text-muted-foreground font-normal">({resource})</span>
       </Label>
       <div className="flex items-start gap-2">
-        <code className="bg-muted flex-1 overflow-x-auto rounded px-2 py-1.5 text-xs whitespace-pre">
+        <code className="bg-muted flex-1 rounded px-2 py-1.5 text-xs wrap-anywhere whitespace-pre-wrap">
           {command}
         </code>
         <CopyButton text={command} label="Copy command" />
       </div>
       <textarea
         id={id}
-        className="border-input focus-visible:ring-ring/50 min-h-16 w-full rounded-md border bg-transparent px-3 py-2 font-mono text-xs break-all outline-none focus-visible:ring-[3px]"
+        className="border-input focus-visible:ring-ring/50 dark:bg-input/30 min-h-16 w-full rounded-md border bg-transparent px-3 py-2 font-mono text-xs break-all outline-none focus-visible:ring-[3px]"
         placeholder={`Paste the ${label} access token`}
         value={token}
         onChange={(event) => {
