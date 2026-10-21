@@ -119,29 +119,86 @@ function pageSchemaOf<T>(item: z.ZodType<T>) {
   })
 }
 
-const batchResponseSchema = z.object({
-  responses: z.array(
-    z.looseObject({
-      id: z.string(),
-      status: z.number(),
-      headers: z.record(z.string(), z.string()).optional(),
-      body: z.unknown().optional(),
-    }),
-  ),
+const batchSubResponseSchema = z.looseObject({
+  id: z.string(),
+  status: z.number(),
+  headers: z.record(z.string(), z.string()).optional(),
+  body: z.unknown().optional(),
 })
 
-/** The `$batch` shape, plus: every request sent in this POST has a sub-response. */
+type BatchSubResponse = z.output<typeof batchSubResponseSchema>
+
+const batchResponseSchema = z.object({ responses: z.array(batchSubResponseSchema) })
+
+/**
+ * Why a `$batch` answer doesn't match the requests sent, or undefined if it does. Each sent id must
+ * get exactly one sub-response, and no other id may appear.
+ */
+function batchAnswerMismatch(
+  sentIds: readonly string[],
+  answeredIds: readonly string[],
+): string | undefined {
+  const sent = new Set(sentIds)
+  const answered = new Set<string>()
+  let unknown = 0
+  let duplicated = 0
+  for (const id of answeredIds) {
+    if (!sent.has(id)) unknown++
+    else if (answered.has(id)) duplicated++
+    else answered.add(id)
+  }
+  const missing = sent.size - answered.size
+  const problems = [
+    missing > 0 ? `missing ${String(missing)} of ${String(sent.size)} sub-responses` : '',
+    unknown > 0 ? `${String(unknown)} sub-responses with an id that wasn't sent` : '',
+    duplicated > 0 ? `${String(duplicated)} duplicated sub-responses` : '',
+  ].filter(Boolean)
+  return problems.length > 0 ? `$batch response has ${problems.join(', ')}.` : undefined
+}
+
+/** The `$batch` shape, plus: the sub-response ids match the requests sent in this POST. */
 function batchResponseSchemaFor(sent: readonly BatchRequest[]) {
   return batchResponseSchema.superRefine((data, ctx) => {
-    const answered = new Set(data.responses.map((response) => response.id))
-    const missing = sent.filter((request) => !answered.has(request.id)).length
-    if (missing > 0) {
-      ctx.addIssue({
-        code: 'custom',
-        message: `$batch response is missing ${String(missing)} of ${String(sent.length)} sub-responses.`,
-      })
-    }
+    const mismatch = batchAnswerMismatch(
+      sent.map((request) => request.id),
+      data.responses.map((response) => response.id),
+    )
+    if (mismatch) ctx.addIssue({ code: 'custom', message: mismatch })
   })
+}
+
+interface BatchRound {
+  /** Final sub-responses, including 429 / 503 once retrying isn't allowed. */
+  settled: BatchResponse[]
+  /** Throttled sub-requests to send again in the next POST. */
+  retry: BatchRequest[]
+  /** How long to wait before that POST: the longest Retry-After among them, or backoff. */
+  waitMs: number
+}
+
+/**
+ * Splits one `$batch` answer into final responses and sub-requests to retry. 429 / 503 are retried
+ * only if `canRetry`. Expects ids already checked by `batchResponseSchemaFor`.
+ */
+function partitionBatchResponses(
+  sent: readonly BatchRequest[],
+  responses: readonly BatchSubResponse[],
+  canRetry: boolean,
+  attempt: number,
+): BatchRound {
+  const requestsById = new Map(sent.map((request) => [request.id, request]))
+  const round: BatchRound = { settled: [], retry: [], waitMs: 0 }
+  for (const response of responses) {
+    const request = requestsById.get(response.id)
+    if (request && canRetry && isRetryableStatus(response.status)) {
+      round.retry.push(request)
+      const retryAfter = headerValue(response.headers, 'Retry-After')
+      round.waitMs = Math.max(round.waitMs, retryDelayMs(retryAfter, attempt))
+    } else {
+      round.settled.push({ id: response.id, status: response.status, body: response.body })
+    }
+  }
+  return round
 }
 
 /** Log label for a finished `$batch` POST, e.g. `$batch ×12 · 3 failed`. */
@@ -517,48 +574,56 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     return items
   }
 
+  /** One `$batch` POST for `pending`, validated so every sent id has exactly one sub-response. */
+  function sendBatch(
+    pending: readonly BatchRequest[],
+    retryBudget: RetryBudget,
+    options: RequestOptions,
+  ) {
+    const body = {
+      requests: pending.map((request) => ({ id: request.id, method: 'GET', url: request.url })),
+    }
+    const sent = pending.length
+    return send('graph', 'POST', GRAPH_BATCH_URL, body, options, {
+      schema: batchResponseSchemaFor(pending),
+      label: batchLabel(sent, []),
+      finishLabel: (data) =>
+        batchLabel(
+          sent,
+          data.responses.map((response) => response.status),
+        ),
+      retryBudget,
+    })
+  }
+
   async function batchChunk(
     chunk: readonly BatchRequest[],
     options: RequestOptions,
   ): Promise<BatchResponse[]> {
-    const results = new Map<string, BatchResponse>()
+    const settled = new Map<string, BatchResponse>()
+    // One budget per chunk, shared by retries of the whole POST (inside send) and retries of
+    // throttled sub-requests (here), so the two don't multiply. Resending a round of throttled
+    // sub-requests costs one retry, however many of them there are.
     const retryBudget: RetryBudget = { left: maxRetries }
-    let pending = chunk
+    let pending: readonly BatchRequest[] = chunk
     for (let attempt = 0; pending.length > 0; attempt++) {
-      const body = { requests: pending.map((r) => ({ id: r.id, method: 'GET', url: r.url })) }
-      const sent = pending.length
-      const json = await send('graph', 'POST', GRAPH_BATCH_URL, body, options, {
-        schema: batchResponseSchemaFor(pending),
-        label: batchLabel(sent, []),
-        finishLabel: (data) =>
-          batchLabel(
-            sent,
-            data.responses.map((r) => r.status),
-          ),
-        retryBudget,
-      })
-      let wait = 0
-      const retry: BatchRequest[] = []
-      const pendingById = new Map(pending.map((p) => [p.id, p]))
-      for (const r of json.responses) {
-        const request = pendingById.get(r.id)
-        if (!request) continue
-        if (isRetryableStatus(r.status) && retryBudget.left > 0) {
-          retry.push(request)
-          wait = Math.max(wait, retryDelayMs(headerValue(r.headers, 'Retry-After'), attempt))
-        } else {
-          results.set(r.id, { id: r.id, status: r.status, body: r.body })
-        }
-      }
-      pending = retry
+      const answer = await sendBatch(pending, retryBudget, options)
+      const round = partitionBatchResponses(
+        pending,
+        answer.responses,
+        retryBudget.left > 0,
+        attempt,
+      )
+      for (const response of round.settled) settled.set(response.id, response)
+      pending = round.retry
       if (pending.length > 0) {
         retryBudget.left--
-        await sleep(wait, options.signal)
+        await sleep(round.waitMs, options.signal)
       }
     }
-    return chunk.map((r) => {
-      const response = results.get(r.id)
-      if (!response) throw new Error(`Unreachable: no $batch response for ${r.id}`)
+    return chunk.map((request) => {
+      const response = settled.get(request.id)
+      if (!response) throw new Error(`Unreachable: no $batch response for ${request.id}`)
       return response
     })
   }

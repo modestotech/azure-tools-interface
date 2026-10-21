@@ -586,4 +586,30 @@ describe('batch', () => {
       errorKind: 'invalid-response',
     })
   })
+
+  it.each([
+    {
+      problem: 'an id that was not sent',
+      responses: [
+        { id: 'a', status: 200, body: {} },
+        { id: 'zz', status: 200, body: {} },
+      ],
+      message: "1 sub-responses with an id that wasn't sent",
+    },
+    {
+      problem: 'a duplicated id',
+      responses: [
+        { id: 'a', status: 200, body: {} },
+        { id: 'a', status: 403, body: {} },
+      ],
+      message: '1 duplicated sub-responses',
+    },
+  ])('fails on a sub-response with $problem', async ({ responses, message }) => {
+    server.use(http.post(GRAPH_BATCH_URL, () => HttpResponse.json({ responses })))
+    const { client, log } = setup()
+    const error = await caught(client.batch([{ id: 'a', url: '/groups/a' }]))
+    expect(error).toMatchObject({ kind: 'invalid-response', url: GRAPH_BATCH_URL })
+    expect(error.message).toContain(message)
+    expect(log.getState().entries[0]).toMatchObject({ state: 'error' })
+  })
 })
