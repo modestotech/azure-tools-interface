@@ -1,0 +1,69 @@
+<policies>
+    <inbound>
+
+        <validate-jwt header-name="Authorization" failed-validation-httpcode="401"
+                      failed-validation-error-message="Unauthorized. Access token is missing or invalid.">
+            <openid-config
+                    url="https://login.microsoftonline.com/00000000-0000-0000-0000-0000000000aa/v2.0/.well-known/openid-configuration"/>
+            <audiences>
+                <audience>api://orders-api.contoso.example.net</audience>
+            </audiences>
+            <issuers>
+                <issuer>https://sts.windows.net/00000000-0000-0000-0000-0000000000aa/</issuer>
+                <issuer>https://login.microsoftonline.com/00000000-0000-0000-0000-0000000000aa/v2.0</issuer>
+            </issuers>
+            <required-claims>
+                <claim name="roles" match="any">
+                    <value>Orders.Read</value>
+                    <value>Orders.Write</value>
+                </claim>
+            </required-claims>
+        </validate-jwt>
+
+        <set-backend-service backend-id="orders-backend"/>
+
+        <authentication-managed-identity
+            resource="api://orders-backend.contoso.example.net"
+            client-id="00000000-0000-0000-0000-000000000011"
+            ignore-error="false"
+        />
+
+    </inbound>
+
+    <backend>
+        <base/>
+    </backend>
+
+    <outbound>
+        <base/>
+
+        <!-- Remove internal headers -->
+        <set-header name="X-Powered-By" exists-action="delete"/>
+        <set-header name="X-AspNet-Version" exists-action="delete"/>
+
+        <!-- Echo Request-Id back to caller so client-side telemetry can correlate with APIM's App Insights log -->
+        <set-header name="Request-Id" exists-action="override">
+            <value>@(context.RequestId.ToString())</value>
+        </set-header>
+    </outbound>
+
+    <on-error>
+        <base/>
+
+        <!-- Return consistent error format -->
+        <return-response>
+            <set-status code="@(context.Response.StatusCode)" reason="@(context.Response.StatusReason)"/>
+            <set-header name="Content-Type" exists-action="override">
+                <value>application/json</value>
+            </set-header>
+            <set-body>@{
+                return new JObject(
+                new JProperty("code", context.Response.StatusCode.ToString()),
+                new JProperty("message", context.LastError?.Message ?? "An error occurred"),
+                new JProperty("requestId", context.RequestId.ToString())
+                ).ToString();
+                }
+            </set-body>
+        </return-response>
+    </on-error>
+</policies>

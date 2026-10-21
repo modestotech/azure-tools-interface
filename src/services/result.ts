@@ -25,10 +25,14 @@ export function resultFromError(error: unknown): ResourceResult<never> {
   }
 }
 
-/** Awaits a load and turns HttpErrors into a ResourceResult. `null` (from `getJsonOrNull`) is empty. */
-export async function settle<T>(load: Promise<T | null>): Promise<ResourceResult<T>> {
+/**
+ * Runs a load and turns HttpErrors into a ResourceResult. `null` (from `getJsonOrNull`) is empty.
+ * Takes a function, so an error thrown while building the request (e.g. `encodePathSegment`
+ * refusing an ID) becomes this resource's result too.
+ */
+export async function settle<T>(load: () => Promise<T | null>): Promise<ResourceResult<T>> {
   try {
-    const data = await load
+    const data = await load()
     return data === null ? { status: 'empty' } : { status: 'ok', data }
   } catch (error) {
     return resultFromError(error)

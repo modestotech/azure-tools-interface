@@ -3,16 +3,16 @@ import { resultFromError, settle } from './result'
 
 describe('ResourceResult', () => {
   it('wraps data, and treats null as empty', async () => {
-    await expect(settle(Promise.resolve({ a: 1 }))).resolves.toEqual({
+    await expect(settle(() => Promise.resolve({ a: 1 }))).resolves.toEqual({
       status: 'ok',
       data: { a: 1 },
     })
-    await expect(settle(Promise.resolve(null))).resolves.toEqual({ status: 'empty' })
+    await expect(settle(() => Promise.resolve(null))).resolves.toEqual({ status: 'empty' })
   })
 
   it('classifies HTTP errors per resource', async () => {
     const forbidden = forbiddenError('graph', '/x', 'denied')
-    await expect(settle(Promise.reject(forbidden))).resolves.toEqual({
+    await expect(settle(() => Promise.reject(forbidden))).resolves.toEqual({
       status: 'forbidden',
       error: forbidden,
     })
@@ -21,8 +21,16 @@ describe('ResourceResult', () => {
     expect(resultFromError(network)).toEqual({ status: 'error', error: network })
   })
 
+  it('settles an HttpError thrown while building the request', async () => {
+    const refused = new HttpError('invalid-request', 'arm', 'bad id')
+    const load = (): Promise<never> => {
+      throw refused
+    }
+    await expect(settle(load)).resolves.toEqual({ status: 'error', error: refused })
+  })
+
   it('rethrows anything that is not an HttpError', async () => {
     const bug = new TypeError('bug')
-    await expect(settle(Promise.reject(bug))).rejects.toBe(bug)
+    await expect(settle(() => Promise.reject(bug))).rejects.toBe(bug)
   })
 })

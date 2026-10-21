@@ -118,7 +118,8 @@ src/
   services/
     queryKeys.ts       # every TanStack Query key
     result.ts          # ResourceResult (ok / empty / forbidden / error), settle()
-    arm/               # APIM ARM calls (raw API layer, typed + Zod-validated); apiVersion.ts
+    arm/               # APIM ARM calls (raw API layer, typed + Zod-validated); apiVersion.ts,
+                       #   urls.ts (ApimServiceRef from the service resource ID, armUrls)
     graph/             # Microsoft Graph calls (raw API layer)
   domain/
     model.ts           # normalized domain types (see below)
@@ -242,7 +243,7 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - Functional React components and hooks; keep components presentational and logic in hooks/domain.
 - All data loading through TanStack Query. All query keys come from `services/queryKeys.ts`; never write key arrays inline.
 - Large tenants: virtualize long lists/tables, lazy-load group members. The one-API scope (see Project overview) keeps request volume bounded.
-- Errors are shown per resource, not as a global failure — a forbidden Graph call should not block the APIM view. Services return per-resource outcomes as `ResourceResult` (`settle()` in `services/result.ts`).
+- Errors are shown per resource, not as a global failure — a forbidden Graph call should not block the APIM view. Services return per-resource outcomes as `ResourceResult` (`settle()` in `services/result.ts`). `settle` takes a function (`settle(() => client.getJson(…))`), so an error thrown while building the URL settles as that resource's `error` too.
 - Tell HTTP errors apart by `kind` (`isHttpError(e, 'forbidden')`), never with `instanceof`.
 - The request log must match what the caller sees. If a response fails validation (Zod, paging or `$batch` shape), its log entry finishes as `error`, never `ok`, and the thrown `HttpError` carries the masked `url` and the `status`.
 - Every outbound request has a timeout and honors its `AbortSignal`, including while it waits in the limiter queue. The timeout (`requestTimeoutMs`, default 30 s) applies per attempt, from leaving the queue until the body is read, and fails as kind `timeout`; a caller abort is logged as `cancelled`.
