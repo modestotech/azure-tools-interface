@@ -1,5 +1,5 @@
 import { armToken, graphToken, TEST_TENANT } from '@/test/helpers/fakeJwt'
-import { checkToken, EXPIRY_WARNING_MS, isBlockingWarning } from './checks'
+import { checkToken, EXPIRY_WARNING_MS, isBlockingIssue } from './checks'
 import { decodeJwt, type TokenClaims } from './jwt'
 import { azTokenCommand, isExpectedAudience } from './resources'
 
@@ -12,7 +12,7 @@ function claims(token: string): TokenClaims {
 describe('checkToken', () => {
   const now = Date.now()
 
-  it('returns no warnings for a fresh token with matching audience and tenant', () => {
+  it('returns no issues for a fresh token with matching audience and tenant', () => {
     expect(
       checkToken({ api: 'arm', claims: claims(armToken()), tenantId: TEST_TENANT, now }),
     ).toEqual([])
@@ -26,8 +26,8 @@ describe('checkToken', () => {
   })
 
   it('flags a Graph token pasted into the ARM field', () => {
-    const warnings = checkToken({ api: 'arm', claims: claims(graphToken()), now })
-    expect(warnings).toContainEqual(
+    const issues = checkToken({ api: 'arm', claims: claims(graphToken()), now })
+    expect(issues).toContainEqual(
       expect.objectContaining({ kind: 'wrong-audience', actual: 'https://graph.microsoft.com' }),
     )
   })
@@ -87,11 +87,11 @@ describe('azTokenCommand', () => {
   })
 })
 
-describe('isBlockingWarning', () => {
+describe('isBlockingIssue', () => {
   it('blocks only on problems Azure would reject with 401', () => {
-    expect(isBlockingWarning({ kind: 'wrong-audience', expected: 'a', actual: 'b' })).toBe(true)
-    expect(isBlockingWarning({ kind: 'expired' })).toBe(true)
-    expect(isBlockingWarning({ kind: 'tenant-mismatch', expected: 'a', actual: 'b' })).toBe(false)
-    expect(isBlockingWarning({ kind: 'expiring-soon', msLeft: 1000 })).toBe(false)
+    expect(isBlockingIssue({ kind: 'wrong-audience', expected: 'a', actual: 'b' })).toBe(true)
+    expect(isBlockingIssue({ kind: 'expired' })).toBe(true)
+    expect(isBlockingIssue({ kind: 'tenant-mismatch', expected: 'a', actual: 'b' })).toBe(false)
+    expect(isBlockingIssue({ kind: 'expiring-soon', msLeft: 1000 })).toBe(false)
   })
 })

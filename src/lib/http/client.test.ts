@@ -114,12 +114,16 @@ describe('createHttpClient', () => {
     expect(log.getState().entries).toHaveLength(0)
   })
 
-  it('refuses a token for the wrong API, or no token, before sending anything', async () => {
+  it('refuses a token for the wrong API, an unreadable one, or none, before sending anything', async () => {
     const swapped = setup({ getToken: () => graphToken() })
     expect((await caught(swapped.client.getJson('arm', SVC_URL))).kind).toBe('audience-mismatch')
+    const garbled = setup({ getToken: () => 'not-a-jwt' })
+    expect((await caught(garbled.client.getJson('arm', SVC_URL))).kind).toBe('invalid-token')
     const none = setup({ getToken: () => undefined })
     expect((await caught(none.client.getJson('arm', SVC_URL))).kind).toBe('no-token')
-    expect(swapped.log.getState().entries).toHaveLength(0)
+    for (const { log } of [swapped, garbled, none]) {
+      expect(log.getState().entries).toHaveLength(0)
+    }
   })
 
   it('resolves a 404 to null with getJsonOrNull and logs it as empty, not as an error', async () => {
@@ -285,7 +289,7 @@ describe('createHttpClient', () => {
   it.each([
     [403, 'forbidden'],
     [404, 'not-found'],
-    [500, 'http'],
+    [500, 'unexpected-status'],
   ] as const)('maps %i to kind %s and logs it as an error', async (status, kind) => {
     server.use(
       http.get(`${ARM}/x`, () =>

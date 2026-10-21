@@ -16,13 +16,13 @@ const claimsSchema = z.looseObject({
 
 export interface TokenClaims {
   /** First audience, for display. A token's `aud` is usually a single string. */
-  readonly aud: string
+  readonly displayAudience: string
   /** Every audience in the token (`aud` may be an array). Audience checks use this. */
   readonly audiences: readonly string[]
   readonly tid: string | undefined
   readonly oid: string | undefined
   /** Best available sign-in name: `upn`, then `unique_name`, then `preferred_username`. */
-  readonly upn: string | undefined
+  readonly signInName: string | undefined
   readonly name: string | undefined
   readonly appid: string | undefined
   /** Expiry as epoch milliseconds. */
@@ -73,11 +73,11 @@ export function decodeJwt(raw: string): DecodeResult {
   return {
     ok: true,
     claims: {
-      aud: audiences[0] ?? '',
+      displayAudience: audiences[0] ?? '',
       audiences,
       tid: c.tid,
       oid: c.oid,
-      upn: c.upn ?? c.unique_name ?? c.preferred_username,
+      signInName: c.upn ?? c.unique_name ?? c.preferred_username,
       name: c.name,
       appid: c.appid,
       expiresAt: c.exp * 1000,

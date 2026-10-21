@@ -1,5 +1,6 @@
 import { armToken, fakeJwt, TEST_TENANT } from '@/test/helpers/fakeJwt'
 import { decodeJwt, normalizeToken } from './jwt'
+import { API_RESOURCES } from './resources'
 
 describe('decodeJwt', () => {
   it('reads aud, tid, oid, upn and exp', () => {
@@ -7,10 +8,10 @@ describe('decodeJwt', () => {
     expect(result).toEqual({
       ok: true,
       claims: expect.objectContaining({
-        aud: 'https://management.azure.com',
+        displayAudience: API_RESOURCES.arm.resource,
         tid: TEST_TENANT,
         oid: '00000000-0000-0000-0000-000000000001',
-        upn: 'dev@contoso.example.net',
+        signInName: 'dev@contoso.example.net',
         expiresAt: 2_000_000_000_000,
       }) as unknown,
     })
@@ -19,8 +20,8 @@ describe('decodeJwt', () => {
   it('falls back to unique_name, then preferred_username, for the sign-in name', () => {
     const a = decodeJwt(fakeJwt({ aud: 'x', exp: 1, unique_name: 'a@example.net' }))
     const b = decodeJwt(fakeJwt({ aud: 'x', exp: 1, preferred_username: 'b@example.net' }))
-    expect(a.ok && a.claims.upn).toBe('a@example.net')
-    expect(b.ok && b.claims.upn).toBe('b@example.net')
+    expect(a.ok && a.claims.signInName).toBe('a@example.net')
+    expect(b.ok && b.claims.signInName).toBe('b@example.net')
   })
 
   it('handles non-ASCII claims (base64url + UTF-8)', () => {
@@ -47,7 +48,7 @@ describe('decodeJwt', () => {
   it('keeps every audience when aud is an array', () => {
     const result = decodeJwt(fakeJwt({ aud: ['x', 'https://graph.microsoft.com'], exp: 1 }))
     expect(result.ok && result.claims.audiences).toEqual(['x', 'https://graph.microsoft.com'])
-    expect(result.ok && result.claims.aud).toBe('x')
+    expect(result.ok && result.claims.displayAudience).toBe('x')
   })
 
   it('rejects payloads without aud or exp', () => {

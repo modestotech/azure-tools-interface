@@ -1,8 +1,8 @@
 export {
   checkToken,
   EXPIRY_WARNING_MS,
-  isBlockingWarning,
-  type TokenWarning,
+  isBlockingIssue,
+  type TokenIssue,
   type TokenCheckInput,
 } from './checks'
 export { isSubscriptionId, isTenantId } from './ids'

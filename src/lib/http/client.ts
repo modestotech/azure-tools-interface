@@ -3,7 +3,7 @@ import {
   API_RESOURCES,
   checkToken,
   decodeJwt,
-  isBlockingWarning,
+  isBlockingIssue,
   type ApiKind,
   type TokenClaims,
 } from '@/lib/token'
@@ -292,22 +292,30 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
   }
 
   /**
-   * Returns the token for `api`, or throws before anything is sent when it's missing, for the wrong
-   * API, or expired. Uses the same checks as the token screen (`checkToken`); warnings that don't
-   * make Azure reject the call (tenant mismatch, expiring soon) don't block.
+   * Returns the token for `api`, or throws before anything is sent when it's missing, unreadable,
+   * for the wrong API, or expired. Uses the same checks as the token screen (`checkToken`); issues
+   * that don't make Azure reject the call (tenant mismatch, expiring soon) don't block.
    */
   function requireValidToken(api: ApiKind): string {
+    const { label, resource } = API_RESOURCES[api]
     const token = config.getToken(api)
     if (!token) {
-      throw new HttpError('no-token', api, `No ${API_RESOURCES[api].label} token entered.`)
+      throw new HttpError('no-token', api, `No ${label} token entered.`)
     }
     const claims = claimsOf(api, token)
-    const blocking = claims ? checkToken({ api, claims }).find(isBlockingWarning) : undefined
-    if (!claims || blocking?.kind === 'wrong-audience') {
+    if (!claims) {
+      throw new HttpError(
+        'invalid-token',
+        api,
+        `The ${label} token can't be read as a JWT. Paste the whole output of the ${label} az command.`,
+      )
+    }
+    const blocking = checkToken({ api, claims }).find(isBlockingIssue)
+    if (blocking?.kind === 'wrong-audience') {
       throw new HttpError(
         'audience-mismatch',
         api,
-        `The ${API_RESOURCES[api].label} token is not valid for ${API_RESOURCES[api].resource}. Paste a token from the ${API_RESOURCES[api].label} az command.`,
+        `The ${label} token is not valid for ${resource}. Paste a token from the ${label} az command.`,
       )
     }
     if (blocking?.kind === 'expired') {
@@ -411,7 +419,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
         return notFoundError(api, maskedUrl, detail)
       default:
         return new HttpError(
-          isRetryableStatus(response.status) ? 'throttled' : 'http',
+          isRetryableStatus(response.status) ? 'throttled' : 'unexpected-status',
           api,
           detail,
           {

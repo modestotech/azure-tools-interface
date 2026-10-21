@@ -79,17 +79,12 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - `sessionStore.test.ts` uses `ARM` from `test/msw/handlers.ts`; `fakeJwt.ts` takes `aud` from `API_RESOURCES[api].resource`.
   - Layering is enforced by `no-restricted-imports` per folder (`LAYERS` in `eslint.config.js`), for both `@/` and relative imports. Tests are exempt.
   - CSP: no milestone owned it. Now in M8 (below).
-- **Code quality review follow-ups (open, 2026-10-18), most severe first.** Fix them before M2 builds on the client:
+- **Code quality review follow-ups (done), most severe first.** Fixed before M2 builds on the client:
   - ~~Validation failures after `send()` are logged as `ok`.~~ Done: `send()` validates against a Zod schema before finishing the log entry, and `getJson` / `getJsonOrNull` / `getAllPages` accept a `schema` for services. A `$batch` log line shows how many sub-responses failed.
   - ~~Requests have no timeout.~~ Done: each attempt combines the caller's signal with `AbortSignal.timeout(requestTimeoutMs)` (default 30 s, counted from leaving the queue, covering the body read) and fails as kind `timeout`. Queued limiter tasks drop out when their signal aborts.
   - ~~`send()` (85 lines) does everything.~~ Done: split into `fetchWithRetry()` (send + retries), `readResponse()` (no I/O: received response → `Outcome`) and `settleLog()` (log entry matches the caller's result). One catch now covers fetch, retry wait and body read.
   - ~~`batchChunk` cleanup.~~ Done: pure `partitionBatchResponses()`, `sendBatch()`, the shared retry-budget rule commented, clearer names. Unknown, duplicate or missing sub-response ids fail the POST as `invalid-response` via the schema (`batchAnswerMismatch()`), so the log line is an error.
-  - Renames:
-    - `HttpErrorKind 'http'` → `'unexpected-status'`
-    - `TokenClaims.aud` → `displayAudience`
-    - `upn` → `signInName`
-    - `TokenWarning` → `TokenIssue`
-    - An undecodable token should get its own error instead of `audience-mismatch`.
+  - ~~Renames.~~ Done: `HttpErrorKind 'http'` → `'unexpected-status'`, `TokenClaims.aud` → `displayAudience`, `upn` → `signInName`, `TokenWarning` → `TokenIssue` (`isBlockingWarning` → `isBlockingIssue`). An undecodable token fails as `invalid-token` instead of `audience-mismatch`.
 
 **M2 — `services/` (raw layer, Zod-validated)**
 - Every ID put into a path (`sub`, `svc`, `apiId`, `opId`, `backendId` from policy XML, Graph `id`) goes through `encodePathSegment()`. Test: a policy with `backend-id="../../x"` gives a per-resource `invalid-request` error and sends nothing.

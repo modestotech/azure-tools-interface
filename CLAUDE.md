@@ -57,7 +57,7 @@ Rules:
 - Tenant and subscription IDs are validated before they're stored: a subscription ID must be a GUID, a tenant ID a GUID or a domain name. Nothing unvalidated goes into a URL or an `az` command.
 - Anything that holds session data (query cache, stores, view state) registers with `onClearSession()` (`app/session/clearSession.ts`), so "Clear session" wipes it.
 - Decode the JWT (no validation needed) to show `aud`, `tid`, `upn`/`oid` and `exp`. Warn if `aud` doesn't match the expected resource, if `tid` doesn't match the entered tenant, or if the token expires soon (they typically last ~60–90 min).
-- The HTTP client refuses to send when the token is missing, for the wrong audience, or expired (`token-expired`, with the az command). A tenant mismatch or a token about to expire is only a warning on the token screen.
+- The HTTP client refuses to send when the token is missing (`no-token`), can't be decoded (`invalid-token`), is for the wrong audience (`audience-mismatch`), or has expired (`token-expired`, with the az command). A tenant mismatch or a token about to expire is only a warning on the token screen.
 - On 401, surface a clear "token expired or wrong audience — re-run az command" message with the exact command to copy (`HttpError.azCommand`).
 - The app is strictly **read-only**: only `GET` requests (plus Graph `$batch`, which wraps GETs). Never add calls that modify Azure or Entra.
 

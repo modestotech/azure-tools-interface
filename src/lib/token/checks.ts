@@ -4,7 +4,8 @@ import { API_RESOURCES, isExpectedAudience, type ApiKind } from './resources'
 /** Warn when a token has less than this left. az tokens typically last 60–90 minutes. */
 export const EXPIRY_WARNING_MS = 10 * 60 * 1000
 
-export type TokenWarning =
+/** A problem with a pasted token. Blocking ones stop requests; the rest are warnings on the token screen. */
+export type TokenIssue =
   | { readonly kind: 'wrong-audience'; readonly expected: string; readonly actual: string }
   | { readonly kind: 'tenant-mismatch'; readonly expected: string; readonly actual: string }
   | { readonly kind: 'expiring-soon'; readonly msLeft: number }
@@ -22,8 +23,8 @@ export interface TokenCheckInput {
  * Problems that make a request pointless: Azure would answer 401. The HTTP client refuses to send
  * with these; the rest (tenant mismatch, expiring soon) are only shown as warnings.
  */
-export function isBlockingWarning(warning: TokenWarning): boolean {
-  return warning.kind === 'wrong-audience' || warning.kind === 'expired'
+export function isBlockingIssue(issue: TokenIssue): boolean {
+  return issue.kind === 'wrong-audience' || issue.kind === 'expired'
 }
 
 export function checkToken({
@@ -31,10 +32,10 @@ export function checkToken({
   claims,
   tenantId,
   now = Date.now(),
-}: TokenCheckInput): TokenWarning[] {
-  const warnings: TokenWarning[] = []
+}: TokenCheckInput): TokenIssue[] {
+  const issues: TokenIssue[] = []
   if (!claims.audiences.some((aud) => isExpectedAudience(api, aud))) {
-    warnings.push({
+    issues.push({
       kind: 'wrong-audience',
       expected: API_RESOURCES[api].resource,
       actual: claims.audiences.join(', ') || '(none)',
@@ -42,13 +43,13 @@ export function checkToken({
   }
   const expected = tenantId?.trim().toLowerCase()
   if (expected && claims.tid?.toLowerCase() !== expected) {
-    warnings.push({ kind: 'tenant-mismatch', expected, actual: claims.tid ?? '(none)' })
+    issues.push({ kind: 'tenant-mismatch', expected, actual: claims.tid ?? '(none)' })
   }
   const msLeft = claims.expiresAt - now
   if (msLeft <= 0) {
-    warnings.push({ kind: 'expired' })
+    issues.push({ kind: 'expired' })
   } else if (msLeft < EXPIRY_WARNING_MS) {
-    warnings.push({ kind: 'expiring-soon', msLeft })
+    issues.push({ kind: 'expiring-soon', msLeft })
   }
-  return warnings
+  return issues
 }
