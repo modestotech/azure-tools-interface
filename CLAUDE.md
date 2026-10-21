@@ -84,7 +84,7 @@ Deployment target: static hosting (Azure Static Web Apps or Storage static websi
 ```bash
 pnpm install
 pnpm dev          # local dev server
-pnpm dev:demo     # dev server with MSW serving fictional ARM/Graph data (no token needed)
+pnpm dev:demo     # dev server with MSW serving fictional ARM/Graph data; "Fill in demo tokens" in the banner
 pnpm build        # type-check + production build
 pnpm test         # unit tests
 pnpm lint         # eslint + prettier check
@@ -109,6 +109,7 @@ src/
     session/           # sessionStore.ts (tokens, tenant, subscription), selectionStore.ts (APIM instance, API),
                        #   httpClient.ts (the app's client), queryClient.ts, clearSession.ts, the token screen
     scope/             # the scope picker (subscription → APIM instance → API)
+    layout/            # AppShell (nav + landing from the registries), LogDock, DemoBanner, uiStore
     AppProviders.tsx   # provides the query cache and the HTTP client (HttpClientContext) to the hooks
   lib/
     http/              # HTTP client: auth header, guards, paging, retries, request log

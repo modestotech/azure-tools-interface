@@ -133,12 +133,12 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
     - `globalHeaders` also sets `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
 
     This turns "not sent anywhere else" from a promise into something the browser enforces. `tests/security/build.test.ts` asserts every directive and header above.
-- **Demo mode** (`pnpm dev:demo`): a banner says "fictional data — don't paste real tokens". (Unmocked ARM/Graph calls already fail, see M1.)
+- **Demo mode** (`pnpm dev:demo`, **done**): a banner says "fictional data — don't paste real tokens" and offers "Fill in demo tokens" (fictional JWTs the mocks accept; the helper is a lazy import, absent from production builds). (Unmocked ARM/Graph calls already fail, see M1.)
 - Scope picker, three required steps (**done**; old API revisions are left out of the API list):
   1. **Subscription**: dropdown from `GET /subscriptions` (name + masked ID). No pasting of subscription IDs.
   2. **APIM instance**: dropdown of services in that subscription.
   3. **API**: dropdown of that instance's APIs, required. No "all APIs" option; analysis starts only once an API is chosen. Changing the API discards the previous analysis.
-- Layout: nav and landing page generated from the registries; the request log is docked as a collapsible bottom or side panel.
+- Layout (**done**): nav and landing page generated from the registries (empty until M6/M7); the request log is docked as a collapsible bottom panel with masked lines and counters, which M5 turns into the Matrix log.
 
 **M5 — Matrix request log (`components/request-log/`)**
 - Monospace green-on-black stream that auto-scrolls; you can pause it by scrolling up. Virtualized (`@tanstack/react-virtual`).
