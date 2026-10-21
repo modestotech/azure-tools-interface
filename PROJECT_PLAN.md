@@ -105,7 +105,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - effective-policy composition per section: global → API → operation. A missing `<base/>` drops the parent's section, and that gets recorded.
   - extractors (§1 pattern): `validate-jwt`, `set-backend-service backend-id`, `authentication-managed-identity`
   - classifying `inbound` / `backend` elements: handled, ignorable (response-only), or `UnresolvedRule` (anything else, including `@(...)` in an access/routing attribute)
-- `mapper/`: joins rules with Entra data into `AccessEdge[]`.
+- `mapper/` (**done**): joins rules with Entra data into `AccessEdge[]`. Known limitation: each path (direct, or one group) is checked on its own, so a user who meets `match="all"` only by combining a direct role with a group role is not found. With `match="any"` (the target pattern) this never matters.
   - inbound: audience → API service principal → roles → `appRoleAssignedTo` → principals → direct group members
   - outbound: `client-id` → user-assigned identity → `appRoleAssignments` on the `resource` service principal
   - SP/MI members of groups are marked `effective: false` with a reason

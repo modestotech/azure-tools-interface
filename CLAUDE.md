@@ -130,7 +130,11 @@ src/
       compose.ts       #   composeSection: <base /> composition, one function for all sections
       elements.ts      #   the element table (supported / ignored / unresolved) and the extractors
       analyze.ts       #   analyzeOperationPolicy: effective inbound/backend rules of one operation
+    findings.ts        # every Finding kind with its severity (FINDING_INFO)
     mapper/            # joins APIM rules with Entra objects into the access graph
+      buildAccessModel.ts  # pure: AccessModelInputs (each part may still be loading) → AccessModel
+      inbound.ts / outbound.ts  # who may call; where it goes and how APIM authenticates
+      lookups.ts       #   what to fetch next (policyLookups, modelLookups), for useAccessModel()
   views/               # one folder per visualization, registered in views/registry.ts
     access-graph/
     operations-table/
@@ -236,12 +240,13 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - `ApimService`, `Api`, `Operation`
 - `PolicyDocument` (scope, raw XML, parsed tree)
 - `AccessRule` (operation, source scope, kind, constraint values) and `UnresolvedRule`
-- `Principal` — discriminated union: `ServicePrincipal` | `User` | `Group` | `ManagedIdentity`
+- `Principal` — discriminated union: `ServicePrincipal` | `User` | `Group` | `ManagedIdentity` | `OtherPrincipal` (a non-user, non-app member such as a device; it can't call)
 - `AppRole`, `AppRoleAssignment`, `GroupMembership`
 - `Backend` — `id`, `title`, `url`, `protocol`, `type` (`Single` | `ApiServiceUrl`)
 - `BackendBinding` — operation → backend, source scope
 - `OutboundAuth` — mechanism (`ManagedIdentity` | `None`), identity used (user-assigned `clientId` / `principalId`), target audience / service principal, app roles held
-- `AccessEdge` — the graph edge set the visualizations render (`principal/group member → operation → backend`, with rules and outbound auth as edge/node details)
+- `AccessEdge` — the graph edge set the visualizations render (`principal/group member → operation → backend`, with rules and outbound auth as edge/node details): `grant` (role holder → operation), `membership` (group → direct member, with `effective`), `route` (operation → backend)
+- `AccessModel` (`domain/mapper`) — operations with their effective policy, backend binding and outbound auth, plus principals, backends, edges, findings, load problems and what's still pending. A finding is only raised from loaded data, never while an input is still loading.
 
 ## Conventions
 

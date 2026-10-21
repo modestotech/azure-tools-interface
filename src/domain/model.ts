@@ -142,3 +142,118 @@ export interface OperationPolicy {
   /** Sections that dropped their parent ("parent inbound ignored" when the section is `inbound`). */
   readonly droppedParents: readonly DroppedParent[]
 }
+
+// Entra
+
+export interface AppRole {
+  readonly id: string
+  /** The string in the token's `roles` claim; undefined for a role without a value. */
+  readonly value: string | undefined
+  readonly displayName: string | undefined
+  readonly isEnabled: boolean
+}
+
+export interface ServicePrincipal {
+  readonly kind: 'servicePrincipal'
+  readonly id: string
+  /** Undefined until the service principal's details have loaded. */
+  readonly appId: string | undefined
+  readonly displayName: string | undefined
+}
+
+export interface ManagedIdentity {
+  readonly kind: 'managedIdentity'
+  readonly id: string
+  readonly appId: string | undefined
+  readonly displayName: string | undefined
+}
+
+export interface User {
+  readonly kind: 'user'
+  readonly id: string
+  readonly displayName: string | undefined
+  /** Known when the user was found as a group member; app role assignments don't include it. */
+  readonly userPrincipalName: string | undefined
+}
+
+export interface Group {
+  readonly kind: 'group'
+  readonly id: string
+  readonly displayName: string | undefined
+}
+
+/** A directory object that isn't a user, app or group (e.g. a device). It can't call an API. */
+export interface OtherPrincipal {
+  readonly kind: 'other'
+  readonly id: string
+  readonly displayName: string | undefined
+}
+
+export type Principal = ServicePrincipal | ManagedIdentity | User | Group | OtherPrincipal
+
+// Backends and outbound auth
+
+export interface Backend {
+  /** `backend:{backendId}` for a backend entity, `service-url` for the API's serviceUrl. */
+  readonly key: string
+  readonly backendId: string | undefined
+  readonly title: string | undefined
+  readonly url: string | undefined
+  readonly protocol: string | undefined
+  /** `Single` (the pattern), `Pool`, or `ApiServiceUrl` when no policy sets a backend. */
+  readonly type: string
+  readonly tls: {
+    readonly validateCertificateChain: boolean | undefined
+    readonly validateCertificateName: boolean | undefined
+  }
+  /** Which credential mechanisms the backend entity configures, never their values. */
+  readonly credentialMechanisms: readonly string[]
+}
+
+export interface BackendBinding {
+  readonly operationId: string
+  readonly backendKey: string
+  /** The `set-backend-service` rule that chose it; undefined when the API's serviceUrl applies. */
+  readonly source: RuleSource | undefined
+}
+
+export type OutboundAuth =
+  | { readonly mechanism: 'None' }
+  | {
+      readonly mechanism: 'ManagedIdentity'
+      readonly source: RuleSource
+      /** Undefined for the system-assigned identity. */
+      readonly clientId: string | undefined
+      /** The identity's service principal object ID, once known. */
+      readonly principalId: string | undefined
+      /** The token audience APIM requests (`resource`). */
+      readonly resource: string
+      /** Service principals that `resource` resolves to. */
+      readonly targetIds: readonly string[]
+      /** App roles the identity holds on those service principals. */
+      readonly roles: readonly AppRole[]
+    }
+
+// The access graph: principal / group member → operation → backend
+
+export type AccessEdge =
+  /** A role holder (user, app, managed identity or group) whose roles meet the operation's requirement. */
+  | {
+      readonly kind: 'grant'
+      readonly principalId: string
+      readonly operationId: string
+      /** The required role values this principal holds. */
+      readonly roles: readonly string[]
+    }
+  /**
+   * A direct member of a group that holds a grant. Only users get the group's roles; an app or
+   * managed identity calling with its own identity doesn't, so its membership is not effective.
+   */
+  | {
+      readonly kind: 'membership'
+      readonly groupId: string
+      readonly memberId: string
+      readonly effective: boolean
+      readonly reason: string | undefined
+    }
+  | { readonly kind: 'route'; readonly operationId: string; readonly backendKey: string }
