@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
+import { CSP_META, STATIC_WEB_APP_CONFIG } from './security.config.ts'
 
 /**
  * `public/mockServiceWorker.js` is only needed by `pnpm dev:demo`. Vite copies everything in
@@ -28,11 +29,37 @@ function dropMockServiceWorker(): Plugin {
   }
 }
 
+const CHARSET_META = '<meta charset="UTF-8" />'
+
+/**
+ * Builds only: puts the Content Security Policy right after `<meta charset>` in index.html, before
+ * any script or stylesheet, and writes staticwebapp.config.json with the same policy as a header.
+ * Both come from security.config.ts.
+ */
+function securityHeaders(): Plugin {
+  return {
+    name: 'security-headers',
+    apply: 'build',
+    transformIndexHtml(html) {
+      if (!html.includes(CHARSET_META)) throw new Error(`index.html must contain ${CHARSET_META}`)
+      const csp = `<meta http-equiv="Content-Security-Policy" content="${CSP_META}" />`
+      return html.replace(CHARSET_META, `${CHARSET_META}\n    ${csp}`)
+    },
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'staticwebapp.config.json',
+        source: `${JSON.stringify(STATIC_WEB_APP_CONFIG, null, 2)}\n`,
+      })
+    },
+  }
+}
+
 /** Tests that need a DOM: React components (`.tsx`) and the app shell, which uses browser APIs. */
 const DOM_TESTS = ['src/**/*.test.tsx', 'src/app/**/*.test.ts']
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), dropMockServiceWorker()],
+  plugins: [react(), tailwindcss(), dropMockServiceWorker(), securityHeaders()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },

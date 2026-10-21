@@ -16,5 +16,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["vite.config.ts", "eslint.config.js", "tests"]
+  "include": ["vite.config.ts", "security.config.ts", "eslint.config.js", "tests"]
 }

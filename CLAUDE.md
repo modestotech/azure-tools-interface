@@ -79,6 +79,8 @@ Required permissions for the signed-in user: `Reader` (or `API Management Servic
 
 Deployment target: static hosting (Azure Static Web Apps or Storage static website). `pnpm build` must produce a fully static `dist/` with client-side routing fallback.
 
+The Content Security Policy and hosting headers are defined once, in `security.config.ts`. The build puts the CSP in a `<meta>` tag right after `<meta charset>` in `index.html` and generates `dist/staticwebapp.config.json` (routing fallback plus `globalHeaders`: CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`); there is no hand-written copy in `public/`. `connect-src` allows only `'self'`, ARM and Graph. `frame-ancestors` only works as a header, so a Storage static website (no custom headers) gets the `<meta>` policy without it. Not applied to `pnpm dev`. Changing the policy means changing `tests/security/build.test.ts` too, which states the expected directives literally.
+
 ## Commands
 
 ```bash
@@ -161,7 +163,7 @@ Module-level state in `lib/` is limited to `requestLogStore` (`lib/http/requestL
 Guidelines from `TECH_DEBT_PLAN_M1.md`:
 - **Policy parser** (built): extractors read the typed tree in `xmlTree.ts`, never fast-xml-parser's raw arrays. Element handling lives only in the `ELEMENTS` table in `elements.ts`. `<base />` composition goes through `composeSection()` for every section.
 - **Findings:** computed once in `domain/` (no auth, HTTP backend, no outbound auth, unresolved rules, …). Scripts filter or present them and never re-implement the checks. Keep `buildAccessModel()` pure and separate from the fetching in `useAccessModel()`. Views get the model from `useAccessModel(svc, api)`; nothing is fetched, not even the service's identity or global policy, until an API is chosen.
-- **Views:** registry entries are lazy-loaded (`React.lazy`), because React Flow, elkjs and ECharts are heavy. The CSP is defined once and used for both the `<meta>` tag and `staticwebapp.config.json`.
+- **Views:** registry entries are lazy-loaded (`React.lazy`), because React Flow, elkjs and ECharts are heavy. The CSP is defined once (`security.config.ts`, see Deployment target).
 
 ### Extensibility (views and scripts)
 
