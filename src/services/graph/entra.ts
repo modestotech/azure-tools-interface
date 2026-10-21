@@ -1,4 +1,5 @@
 import type { HttpClient } from '@/lib/http'
+import { isGuid } from '@/lib/token'
 import { queryKeys } from '../queryKeys'
 import { settle, type ResourceResult } from '../result'
 import {
@@ -70,6 +71,36 @@ export function findServicePrincipalsByName(
       schema: servicePrincipalSchema,
     }),
   )
+}
+
+/**
+ * The service principals a `validate-jwt` audience or an `authentication-managed-identity`
+ * resource stands for: a GUID is an application ID, anything else (`api://…`, a URL) is matched
+ * against `servicePrincipalNames`. Always a list; `empty` or `[]` means none.
+ */
+export function findServicePrincipalsForAudience(
+  client: HttpClient,
+  audience: string,
+  options: LoadOptions = {},
+): Promise<ResourceResult<GraphServicePrincipal[]>> {
+  const queryKey = queryKeys.graph.spsForAudience(audience)
+  if (!isGuid(audience)) {
+    return settle(() =>
+      client.getAllPages('graph', graphUrl(graphPaths.servicePrincipalsByName(audience)), {
+        ...options,
+        queryKey,
+        schema: servicePrincipalSchema,
+      }),
+    )
+  }
+  return settle(async () => {
+    const sp = await client.getJsonOrNull(
+      'graph',
+      graphUrl(graphPaths.servicePrincipalByAppId(audience)),
+      { ...options, queryKey, schema: servicePrincipalSchema },
+    )
+    return sp ? [sp] : []
+  })
 }
 
 /** Users, groups and service principals holding app roles on the API's service principal. */

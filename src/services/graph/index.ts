@@ -2,6 +2,7 @@ export { batchGet, getServicePrincipalsByIds, subResponseResult, type BatchResul
 export {
   directMembers,
   findServicePrincipalsByName,
+  findServicePrincipalsForAudience,
   getGroup,
   getServicePrincipalByAppId,
   getServicePrincipalById,
@@ -28,4 +29,5 @@ export {
   useServicePrincipalById,
   useServicePrincipalsByIds,
   useServicePrincipalsByName,
+  useServicePrincipalsForAudiences,
 } from './queries'

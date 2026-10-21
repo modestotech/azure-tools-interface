@@ -1,9 +1,10 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
-import { resourceQuery, useHttpClient } from '../query'
+import { resourceQuery, useHttpClient, useResourceQueries } from '../query'
 import { getServicePrincipalsByIds } from './batch'
 import {
   findServicePrincipalsByName,
+  findServicePrincipalsForAudience,
   getGroup,
   getServicePrincipalByAppId,
   getServicePrincipalById,
@@ -55,43 +56,50 @@ export function useServicePrincipalsByIds(ids: readonly string[] | undefined) {
   )
 }
 
-export function useAppRoleAssignedTo(spId: string | undefined) {
+/** Service principals per audience or resource (GUID → appId, otherwise servicePrincipalNames). */
+export function useServicePrincipalsForAudiences(audiences: readonly string[]) {
   const client = useHttpClient()
-  return useQuery(
+  return useResourceQueries(audiences, (audience) =>
+    resourceQuery(audience, queryKeys.graph.spsForAudience, (value, signal) =>
+      findServicePrincipalsForAudience(client, value, { signal }),
+    ),
+  )
+}
+
+/** Role holders on each of these service principals, by service principal ID. */
+export function useAppRoleAssignedTo(spIds: readonly string[]) {
+  const client = useHttpClient()
+  return useResourceQueries(spIds, (spId) =>
     resourceQuery(spId, queryKeys.graph.appRoleAssignedTo, (id, signal) =>
       listAppRoleAssignedTo(client, id, { signal }),
     ),
   )
 }
 
-export function useAppRoleAssignments(spId: string | undefined) {
+/** App roles each of these service principals holds elsewhere, by service principal ID. */
+export function useAppRoleAssignments(spIds: readonly string[]) {
   const client = useHttpClient()
-  return useQuery(
+  return useResourceQueries(spIds, (spId) =>
     resourceQuery(spId, queryKeys.graph.appRoleAssignments, (id, signal) =>
       listAppRoleAssignments(client, id, { signal }),
     ),
   )
 }
 
-/** Groups and their direct members, one query each per group. */
+/** Each group's details, by group ID. */
 export function useGroups(groupIds: readonly string[]) {
   const client = useHttpClient()
-  return useQueries({
-    queries: groupIds.map((groupId) =>
-      resourceQuery(groupId, queryKeys.graph.group, (id, signal) =>
-        getGroup(client, id, { signal }),
-      ),
-    ),
-  })
+  return useResourceQueries(groupIds, (groupId) =>
+    resourceQuery(groupId, queryKeys.graph.group, (id, signal) => getGroup(client, id, { signal })),
+  )
 }
 
+/** Each group's direct members (nested groups removed), by group ID. */
 export function useGroupMembers(groupIds: readonly string[]) {
   const client = useHttpClient()
-  return useQueries({
-    queries: groupIds.map((groupId) =>
-      resourceQuery(groupId, queryKeys.graph.groupMembers, (id, signal) =>
-        listGroupMembers(client, id, { signal }),
-      ),
+  return useResourceQueries(groupIds, (groupId) =>
+    resourceQuery(groupId, queryKeys.graph.groupMembers, (id, signal) =>
+      listGroupMembers(client, id, { signal }),
     ),
-  })
+  )
 }

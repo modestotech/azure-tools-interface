@@ -32,6 +32,8 @@ export const queryKeys = {
     spById: (id: string) => ['graph', 'sp', 'id', id] as const,
     spByName: (servicePrincipalName: string) =>
       ['graph', 'sp', 'name', servicePrincipalName] as const,
+    /** Service principals for a `validate-jwt` audience or managed identity `resource` (a list). */
+    spsForAudience: (audience: string) => ['graph', 'sp', 'audience', audience] as const,
     /** A `$batch` lookup; the IDs are sorted so the same set always gives the same key. */
     spsByIds: (ids: readonly string[]) => ['graph', 'sp', 'ids', ...[...ids].sort()] as const,
     appRoleAssignedTo: (spId: string) => ['graph', 'sp', 'id', spId, 'appRoleAssignedTo'] as const,

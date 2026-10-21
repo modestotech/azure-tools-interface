@@ -1,5 +1,11 @@
-import { queryOptions, skipToken, type QueryKey } from '@tanstack/react-query'
-import { createContext, useContext } from 'react'
+import {
+  queryOptions,
+  skipToken,
+  useQueries,
+  type QueryKey,
+  type UseQueryResult,
+} from '@tanstack/react-query'
+import { createContext, useCallback, useContext, useMemo } from 'react'
 import type { HttpClient } from '@/lib/http'
 import { queryKeys } from './queryKeys'
 import type { ResourceResult } from './result'
@@ -31,4 +37,25 @@ export function resourceQuery<Input, T>(
     queryKey: input === undefined ? queryKeys.waiting : key(input),
     queryFn: input === undefined ? skipToken : ({ signal }) => load(input, signal),
   })
+}
+
+export type ResourceQueryOptions<T> = ReturnType<typeof resourceQuery<unknown, T>>
+
+/**
+ * One query per key, combined into a Map from key to its ResourceResult (undefined while
+ * loading). The Map is rebuilt only when a query result changes, so callers can memoize on it.
+ */
+export function useResourceQueries<T>(
+  keys: readonly string[],
+  options: (key: string) => ResourceQueryOptions<T>,
+): ReadonlyMap<string, ResourceResult<T> | undefined> {
+  // A new array with the same keys must not count as a change.
+  const signature = JSON.stringify(keys)
+  const stableKeys = useMemo(() => JSON.parse(signature) as string[], [signature])
+  const combine = useCallback(
+    (results: UseQueryResult<ResourceResult<T>>[]) =>
+      new Map(stableKeys.map((key, index) => [key, results[index]?.data])),
+    [stableKeys],
+  )
+  return useQueries({ queries: stableKeys.map(options), combine })
 }

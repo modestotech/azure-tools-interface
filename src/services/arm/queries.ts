@@ -1,6 +1,6 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
-import { resourceQuery, useHttpClient } from '../query'
+import { resourceQuery, useHttpClient, useResourceQueries } from '../query'
 import {
   getApimService,
   getApiPolicy,
@@ -102,7 +102,7 @@ export function useApiPolicy(svc: ApimServiceRef | undefined, apiId: string | un
   )
 }
 
-/** Each operation's own policy, one query per operation (the client limits concurrency). */
+/** Each operation's own policy, by operation ID (the client limits concurrency). */
 export function useOperationPolicies(
   svc: ApimServiceRef | undefined,
   apiId: string | undefined,
@@ -110,27 +110,23 @@ export function useOperationPolicies(
 ) {
   const client = useHttpClient()
   const api = apiInput(svc, apiId)
-  return useQueries({
-    queries: opIds.map((opId) =>
-      resourceQuery(
-        api && { ...api, opId },
-        (o) => queryKeys.arm.operationPolicy(o.svc.subscriptionId, o.svc.id, o.apiId, o.opId),
-        (o, signal) => getOperationPolicy(client, o.svc, o.apiId, o.opId, { signal }),
-      ),
+  return useResourceQueries(opIds, (opId) =>
+    resourceQuery(
+      api && { ...api, opId },
+      (o) => queryKeys.arm.operationPolicy(o.svc.subscriptionId, o.svc.id, o.apiId, o.opId),
+      (o, signal) => getOperationPolicy(client, o.svc, o.apiId, o.opId, { signal }),
     ),
-  })
+  )
 }
 
-/** Each backend named in the API's policies. */
+/** Each backend named in the API's policies, by backend ID. */
 export function useBackends(svc: ApimServiceRef | undefined, backendIds: readonly string[]) {
   const client = useHttpClient()
-  return useQueries({
-    queries: backendIds.map((backendId) =>
-      resourceQuery(
-        svc && { svc, backendId },
-        (b) => queryKeys.arm.backend(b.svc.subscriptionId, b.svc.id, b.backendId),
-        (b, signal) => getBackend(client, b.svc, b.backendId, { signal }),
-      ),
+  return useResourceQueries(backendIds, (backendId) =>
+    resourceQuery(
+      svc && { svc, backendId },
+      (b) => queryKeys.arm.backend(b.svc.subscriptionId, b.svc.id, b.backendId),
+      (b, signal) => getBackend(client, b.svc, b.backendId, { signal }),
     ),
-  })
+  )
 }

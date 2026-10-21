@@ -13,6 +13,7 @@ import { GRAPH } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
 import {
   findServicePrincipalsByName,
+  findServicePrincipalsForAudience,
   getGroup,
   getServicePrincipalByAppId,
   getServicePrincipalById,
@@ -57,6 +58,31 @@ describe("the API's service principal", () => {
     expect(log.getState().entries[0]?.url).toContain(
       encodeURIComponent("'api://x'' or 1 eq 1 or ''a'"),
     )
+  })
+})
+
+describe('findServicePrincipalsForAudience', () => {
+  it('looks a GUID up as an appId and anything else by servicePrincipalNames, always as a list', async () => {
+    const { client, log } = testClient()
+    const byGuid = await findServicePrincipalsForAudience(client, ORDERS_API_SP.appId)
+    const byName = await findServicePrincipalsForAudience(
+      client,
+      'api://orders-api.contoso.example.net',
+    )
+    expect(byGuid.status === 'ok' && byGuid.data.map((sp) => sp.id)).toEqual([ORDERS_API_SP.id])
+    expect(byName.status === 'ok' && byName.data.map((sp) => sp.id)).toEqual([ORDERS_API_SP.id])
+    const urls = log.getState().entries.map((entry) => entry.url)
+    expect(urls[0]).toContain(`(appId='${ORDERS_API_SP.appId}')`)
+    expect(urls[1]).toContain('servicePrincipalNames')
+  })
+
+  it('gives an empty list for an unknown GUID, not an error', async () => {
+    const { client, log } = testClient()
+    await expect(findServicePrincipalsForAudience(client, UNKNOWN_GUID)).resolves.toEqual({
+      status: 'ok',
+      data: [],
+    })
+    expect(log.getState().entries[0]?.state).toBe('empty')
   })
 })
 

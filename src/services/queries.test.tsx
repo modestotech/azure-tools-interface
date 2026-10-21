@@ -54,23 +54,38 @@ describe('query hooks', () => {
     expect(log.getState().entries).toHaveLength(1)
   })
 
-  it('load one result per operation policy, a missing policy being empty', async () => {
+  it('load one result per operation policy, keyed by operation, a missing policy being empty', async () => {
     const { wrapper } = setup()
     const { result } = renderHook(
       () => useOperationPolicies(svc, 'orders-api', ['list-orders', 'create-order']),
       { wrapper },
     )
     await waitFor(() => {
-      expect(result.current.every((query) => query.isSuccess)).toBe(true)
+      expect([...result.current.values()].every((data) => data !== undefined)).toBe(true)
     })
-    expect(result.current.map((query) => query.data?.status)).toEqual(['empty', 'ok'])
+    expect(result.current.get('list-orders')).toEqual({ status: 'empty' })
+    expect(result.current.get('create-order')?.status).toBe('ok')
+  })
+
+  it('keep the same result Map across renders while nothing changes', async () => {
+    const { wrapper } = setup()
+    const { result, rerender } = renderHook(
+      ({ ids }: { ids: string[] }) => useOperationPolicies(svc, 'orders-api', ids),
+      { wrapper, initialProps: { ids: ['list-orders'] } },
+    )
+    await waitFor(() => {
+      expect(result.current.get('list-orders')).toBeDefined()
+    })
+    const first = result.current
+    rerender({ ids: ['list-orders'] })
+    expect(result.current).toBe(first)
   })
 
   it('settle a refused backend-id as an error, without sending anything', async () => {
     const { log, wrapper } = setup()
     const { result } = renderHook(() => useBackends(svc, ['../../x']), { wrapper })
     await waitFor(() => {
-      expect(result.current[0]?.data).toMatchObject({
+      expect(result.current.get('../../x')).toMatchObject({
         status: 'error',
         error: { kind: 'invalid-request' },
       })
@@ -88,12 +103,12 @@ describe('query hooks', () => {
       { wrapper },
     )
     await waitFor(() => {
-      expect(result.current.members[0]?.data?.status).toBe('ok')
+      expect(result.current.members.get(ORDERS_READERS.id)?.status).toBe('ok')
     })
     await waitFor(() => {
       expect(result.current.sp.data?.status).toBe('ok')
     })
-    const members = result.current.members[0]?.data
+    const members = result.current.members.get(ORDERS_READERS.id)
     expect(members?.status === 'ok' && members.data.map((m) => m.kind)).toEqual([
       'user',
       'servicePrincipal',
