@@ -111,7 +111,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - SP/MI members of groups are marked `effective: false` with a reason
   - a required role that doesn't exist in the API's `appRoles` is a finding
   - findings: no auth, parent inbound ignored, no outbound auth, HTTP backend, APIM identity holding no role on the backend
-- `useAccessModel()`: orchestrates the queries and builds the model incrementally, so views render partial data with progress.
+- `useAccessModel()` (**done**): orchestrates the queries and builds the model incrementally, so views render partial data with progress (`model.pending`). **M3 is complete.**
 
 **M4 — App shell and session screen**
 - Token paste screen:

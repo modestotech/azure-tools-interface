@@ -1,5 +1,7 @@
+import type { GraphServicePrincipal } from '@/services/graph'
 import type { OperationPolicy } from '../model'
 import type { AccessModel } from './buildAccessModel'
+import type { Loadable } from './inputs'
 
 /**
  * What to fetch next, derived from what has loaded. `useAccessModel()` chains the query hooks
@@ -33,6 +35,17 @@ export function policyLookups(policies: Iterable<OperationPolicy>): PolicyLookup
       ),
     ),
   }
+}
+
+/** The API service principals the audiences resolved to, for their role holders. */
+export function audienceServicePrincipalIds(
+  audiences: ReadonlyMap<string, Loadable<readonly GraphServicePrincipal[]>>,
+): string[] {
+  return unique(
+    [...audiences.values()].flatMap((result) =>
+      result?.status === 'ok' ? result.data.map((sp) => sp.id) : [],
+    ),
+  )
 }
 
 export interface ModelLookups {

@@ -135,6 +135,7 @@ src/
       buildAccessModel.ts  # pure: AccessModelInputs (each part may still be loading) → AccessModel
       inbound.ts / outbound.ts  # who may call; where it goes and how APIM authenticates
       lookups.ts       #   what to fetch next (policyLookups, modelLookups), for useAccessModel()
+    useAccessModel.ts  # the hook views use: chains the query hooks through the lookups, builds the model
   views/               # one folder per visualization, registered in views/registry.ts
     access-graph/
     operations-table/
@@ -155,7 +156,7 @@ Module-level state in `lib/` is limited to `requestLogStore` (`lib/http/requestL
 
 Guidelines from `TECH_DEBT_PLAN_M1.md`:
 - **Policy parser** (built): extractors read the typed tree in `xmlTree.ts`, never fast-xml-parser's raw arrays. Element handling lives only in the `ELEMENTS` table in `elements.ts`. `<base />` composition goes through `composeSection()` for every section.
-- **Findings:** computed once in `domain/` (no auth, HTTP backend, no outbound auth, unresolved rules, …). Scripts filter or present them and never re-implement the checks. Keep `buildAccessModel()` pure and separate from the fetching in `useAccessModel()`.
+- **Findings:** computed once in `domain/` (no auth, HTTP backend, no outbound auth, unresolved rules, …). Scripts filter or present them and never re-implement the checks. Keep `buildAccessModel()` pure and separate from the fetching in `useAccessModel()`. Views get the model from `useAccessModel(svc, api)`; nothing is fetched, not even the service's identity or global policy, until an API is chosen.
 - **Views:** registry entries are lazy-loaded (`React.lazy`), because React Flow, elkjs and ECharts are heavy. The CSP is defined once and used for both the `<meta>` tag and `staticwebapp.config.json`.
 
 ### Extensibility (views and scripts)
