@@ -134,7 +134,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 
     This turns "not sent anywhere else" from a promise into something the browser enforces. `tests/security/build.test.ts` asserts every directive and header above.
 - **Demo mode** (`pnpm dev:demo`): a banner says "fictional data — don't paste real tokens". (Unmocked ARM/Graph calls already fail, see M1.)
-- Scope picker, three required steps:
+- Scope picker, three required steps (**done**; old API revisions are left out of the API list):
   1. **Subscription**: dropdown from `GET /subscriptions` (name + masked ID). No pasting of subscription IDs.
   2. **APIM instance**: dropdown of services in that subscription.
   3. **API**: dropdown of that instance's APIs, required. No "all APIs" option; analysis starts only once an API is chosen. Changing the API discards the previous analysis.

@@ -1,6 +1,7 @@
 import { requestLogStore } from '@/lib/http'
 import { httpClient } from './httpClient'
 import { queryClient } from './queryClient'
+import { selectionStore } from './selectionStore'
 import { sessionStore } from './sessionStore'
 
 /**
@@ -20,9 +21,9 @@ export function onClearSession(handler: () => void): () => void {
 
 /**
  * "Clear session": forgets tokens and IDs, the HTTP client's token cache, the request log (its raw
- * URLs contain the IDs), every fetched resource in the query cache, and whatever registered with
- * `onClearSession`. Every handler runs even if one throws; the errors are
- * rethrown together afterwards.
+ * URLs contain the IDs), every fetched resource in the query cache, the selected APIM instance and
+ * API, and whatever registered with `onClearSession`. Every handler runs even if one throws; the
+ * errors are rethrown together afterwards.
  */
 export function clearSession(): void {
   const handlers = [
@@ -37,6 +38,9 @@ export function clearSession(): void {
     },
     () => {
       queryClient.clear()
+    },
+    () => {
+      selectionStore.getState().reset()
     },
     ...clearHandlers,
   ]

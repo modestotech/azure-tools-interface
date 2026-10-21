@@ -27,11 +27,12 @@ interface ApiInput {
 const apiInput = (svc: ApimServiceRef | undefined, apiId: string | undefined) =>
   svc && apiId ? { svc, apiId } : undefined
 
-export function useSubscriptions() {
+/** Idle until `enabled` (an ARM token is entered), so no request fails before there is one. */
+export function useSubscriptions(enabled = true) {
   const client = useHttpClient()
   return useQuery(
     resourceQuery(
-      {},
+      enabled ? {} : undefined,
       () => queryKeys.arm.subscriptions(),
       (_, signal) => listSubscriptions(client, { signal }),
     ),

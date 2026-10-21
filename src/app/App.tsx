@@ -1,3 +1,5 @@
+import { AnalysisStatus } from './scope/AnalysisStatus'
+import { ScopePicker } from './scope/ScopePicker'
 import { TokenScreen } from './session/TokenScreen'
 
 export function App() {
@@ -9,6 +11,8 @@ export function App() {
         operation.
       </p>
       <TokenScreen />
+      <ScopePicker />
+      <AnalysisStatus />
     </main>
   )
 }

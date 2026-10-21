@@ -106,7 +106,9 @@ Run `pnpm typecheck && pnpm lint && pnpm test` before considering a task done.
 ```
 src/
   app/                 # shell, routing, layout, session/token input screen
-    session/           # sessionStore.ts, httpClient.ts (the app's client), queryClient.ts, clearSession.ts
+    session/           # sessionStore.ts (tokens, tenant, subscription), selectionStore.ts (APIM instance, API),
+                       #   httpClient.ts (the app's client), queryClient.ts, clearSession.ts, the token screen
+    scope/             # the scope picker (subscription → APIM instance → API)
     AppProviders.tsx   # provides the query cache and the HTTP client (HttpClientContext) to the hooks
   lib/
     http/              # HTTP client: auth header, guards, paging, retries, request log

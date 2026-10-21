@@ -11,8 +11,8 @@ export interface SessionState {
   readonly tokens: Readonly<Record<ApiKind, string>>
   readonly tenantId: string
   /**
-   * Selected subscription, used to mask URLs as `{sub}`. Stays here until the M4 selection store
-   * exists; then decide whether it moves there with the APIM instance and API.
+   * Selected subscription, used to mask URLs as `{sub}`. It lives here rather than in the
+   * selection store because masking needs it; changing it resets the selected instance and API.
    */
   readonly subscriptionId: string
   setToken(api: ApiKind, raw: string): void
