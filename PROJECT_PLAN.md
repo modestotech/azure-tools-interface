@@ -95,7 +95,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - groups and their *direct* members, with group-type members filtered out
   - a `$batch` helper that chunks requests into groups of 20 (`batchGet`, `getServicePrincipalsByIds`), with a ResourceResult per lookup
   - **Open:** service principal owners (`/servicePrincipals/{id}/owners`), needed for "who those service principals are" (CLAUDE.md › Project overview). Not in this list originally; add with a query key.
-- Each call gets a TanStack Query hook with stable keys (`['arm', sub, svc, 'apis']`, `['graph','sp',appId]`, …).
+- Each call gets a TanStack Query hook with stable keys (`['arm', sub, svc, 'apis']`, `['graph','sp',appId]`, …). **Done.**
 - Errors are kept per resource; nothing fails globally.
 
 **M3 — `domain/` (pure TS; this is the bulk of the tests)**

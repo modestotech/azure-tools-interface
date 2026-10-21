@@ -7,6 +7,8 @@
  * resource group.
  */
 export const queryKeys = {
+  /** Placeholder for a query that is skipped until its inputs exist. Never fetched. */
+  waiting: ['waiting'] as const,
   arm: {
     all: ['arm'] as const,
     subscriptions: () => ['arm', 'subscriptions'] as const,
@@ -30,6 +32,8 @@ export const queryKeys = {
     spById: (id: string) => ['graph', 'sp', 'id', id] as const,
     spByName: (servicePrincipalName: string) =>
       ['graph', 'sp', 'name', servicePrincipalName] as const,
+    /** A `$batch` lookup; the IDs are sorted so the same set always gives the same key. */
+    spsByIds: (ids: readonly string[]) => ['graph', 'sp', 'ids', ...[...ids].sort()] as const,
     appRoleAssignedTo: (spId: string) => ['graph', 'sp', 'id', spId, 'appRoleAssignedTo'] as const,
     appRoleAssignments: (spId: string) =>
       ['graph', 'sp', 'id', spId, 'appRoleAssignments'] as const,

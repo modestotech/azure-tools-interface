@@ -19,3 +19,13 @@ export type {
   GraphServicePrincipal,
 } from './schemas'
 export { graphPaths, graphUrl } from './urls'
+export {
+  useAppRoleAssignedTo,
+  useAppRoleAssignments,
+  useGroupMembers,
+  useGroups,
+  useServicePrincipalByAppId,
+  useServicePrincipalById,
+  useServicePrincipalsByIds,
+  useServicePrincipalsByName,
+} from './queries'

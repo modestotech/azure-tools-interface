@@ -20,3 +20,14 @@ export type {
   ArmSubscription,
 } from './schemas'
 export { armUrls, parseApimServiceId, type ApimServiceRef } from './urls'
+export {
+  useApimService,
+  useApimServices,
+  useApiPolicy,
+  useApis,
+  useBackends,
+  useGlobalPolicy,
+  useOperationPolicies,
+  useOperations,
+  useSubscriptions,
+} from './queries'

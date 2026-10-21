@@ -3,8 +3,10 @@ import { ARM } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
 import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
 import { requestLogStore } from '@/lib/http'
+import { queryKeys } from '@/services/queryKeys'
 import { clearSession, onClearSession } from './clearSession'
 import { httpClient } from './httpClient'
+import { queryClient } from './queryClient'
 import { sessionStore } from './sessionStore'
 
 describe('session store', () => {
@@ -81,12 +83,13 @@ describe('session store', () => {
     expect(sessionStore.getState().tokens).toEqual({ arm: '', graph })
   })
 
-  it('clearSession wipes tokens, IDs, the client token cache and the request log', async () => {
+  it('clearSession wipes tokens, IDs, the client token cache, the request log and the query cache', async () => {
     sessionStore.getState().setToken('arm', armToken())
     sessionStore.getState().setSubscriptionId(TEST_SUB)
     server.use(http.get(`${ARM}/x`, () => HttpResponse.json({})))
     await httpClient.getJson('arm', `${ARM}/x`)
     expect(requestLogStore.getState().entries).toHaveLength(1)
+    queryClient.setQueryData(queryKeys.arm.subscriptions(), { status: 'empty' })
 
     const resetClient = vi.spyOn(httpClient, 'reset')
 
@@ -99,6 +102,7 @@ describe('session store', () => {
       subscriptionId: '',
     })
     expect(requestLogStore.getState().entries).toHaveLength(0)
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
   })
 
   it('clearSession runs every registered handler, even when one throws', () => {

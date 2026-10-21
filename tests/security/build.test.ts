@@ -22,6 +22,12 @@ const ALLOWED_ORIGINS: Readonly<Record<string, string>> = {
   'http://www.w3.org': 'XML/SVG namespace identifiers in React DOM; never fetched',
   'https://react.dev': 'link text in React error messages; never fetched',
   'https://tailwindcss.com': 'license comment in the CSS; never fetched',
+  'https://management.core.windows.net':
+    'an accepted ARM token audience (API_RESOURCES), compared with the aud claim; never fetched',
+  'https://json-schema.org':
+    "$schema identifier in Zod's toJSONSchema (bundled, unused); never fetched",
+  'http://json-schema.org':
+    "$schema identifier in Zod's toJSONSchema (bundled, unused); never fetched",
 }
 
 let outDir: string

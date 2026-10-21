@@ -105,7 +105,8 @@ Run `pnpm typecheck && pnpm lint && pnpm test` before considering a task done.
 ```
 src/
   app/                 # shell, routing, layout, session/token input screen
-    session/           # sessionStore.ts, httpClient.ts (the app's client), clearSession.ts
+    session/           # sessionStore.ts, httpClient.ts (the app's client), queryClient.ts, clearSession.ts
+    AppProviders.tsx   # provides the query cache and the HTTP client (HttpClientContext) to the hooks
   lib/
     http/              # HTTP client: auth header, guards, paging, retries, request log
       client.ts        #   createHttpClient (getJson, getJsonOrNull, getAllPages, batch, reset)
@@ -117,6 +118,7 @@ src/
     token/             # JWT decode, audience/tenant/expiry checks, API endpoints (resources.ts)
   services/
     queryKeys.ts       # every TanStack Query key
+    query.ts           # HttpClientContext, useHttpClient, resourceQuery (shared by the hooks)
     result.ts          # ResourceResult (ok / empty / forbidden / error), settle()
     arm/               # APIM ARM calls (raw API layer, typed + Zod-validated); apiVersion.ts,
                        #   urls.ts (ApimServiceRef from the service resource ID, armUrls)
@@ -241,7 +243,7 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 
 - TypeScript strict, no `any`; validate external responses with Zod in `services/` by passing the schema to the client (`getJson(api, url, { schema })`, likewise `getJsonOrNull` and `getAllPages` with the item schema). Don't `parse` the result afterwards: the client logs a mismatch as `error`, while a later parse would leave the request logged as `ok`.
 - Functional React components and hooks; keep components presentational and logic in hooks/domain.
-- All data loading through TanStack Query. All query keys come from `services/queryKeys.ts`; never write key arrays inline.
+- All data loading through TanStack Query. All query keys come from `services/queryKeys.ts`; never write key arrays inline. Each service call has a hook (`services/arm/queries.ts`, `services/graph/queries.ts`) built with `resourceQuery()`: inputs may be `undefined`, and the query stays idle (`skipToken`) until they're chosen. Query data is a `ResourceResult`. The cache never refetches on its own and doesn't retry (the HTTP client does), so the request log shows only requests the user caused.
 - Large tenants: virtualize long lists/tables, lazy-load group members. The one-API scope (see Project overview) keeps request volume bounded.
 - Errors are shown per resource, not as a global failure — a forbidden Graph call should not block the APIM view. Services return per-resource outcomes as `ResourceResult` (`settle()` in `services/result.ts`). `settle` takes a function (`settle(() => client.getJson(…))`), so an error thrown while building the URL settles as that resource's `error` too.
 - Tell HTTP errors apart by `kind` (`isHttpError(e, 'forbidden')`), never with `instanceof`.

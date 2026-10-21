@@ -21,4 +21,8 @@ describe('queryKeys', () => {
     ].map((k) => JSON.stringify(k))
     expect(new Set(keys).size).toBe(3)
   })
+
+  it('gives the same $batch key for the same set of IDs, in any order', () => {
+    expect(queryKeys.graph.spsByIds(['b', 'a'])).toEqual(queryKeys.graph.spsByIds(['a', 'b']))
+  })
 })
