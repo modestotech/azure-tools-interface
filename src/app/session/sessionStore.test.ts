@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw'
+import { ARM } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
 import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
 import { requestLogStore } from '@/lib/http'
@@ -24,8 +25,8 @@ describe('session store', () => {
     s.setTenantId(TEST_TENANT)
     s.setSubscriptionId(TEST_SUB)
 
-    server.use(http.get('https://management.azure.com/x', () => HttpResponse.json({})))
-    await httpClient.getJson('arm', `https://management.azure.com/x?sub=${TEST_SUB}`)
+    server.use(http.get(`${ARM}/x`, () => HttpResponse.json({})))
+    await httpClient.getJson('arm', `${ARM}/x?sub=${TEST_SUB}`)
 
     expect(setItem).not.toHaveBeenCalled()
     expect(pushState).not.toHaveBeenCalled()
@@ -42,9 +43,10 @@ describe('session store', () => {
   it('goes through the mocked fetch, so tests can never reach real Azure', async () => {
     sessionStore.getState().setToken('arm', armToken())
     // No handler: MSW rejects it (kind "network"). Real Azure would answer with an HTTP status instead.
-    await expect(
-      httpClient.getJson('arm', 'https://management.azure.com/unmocked-guard'),
-    ).rejects.toMatchObject({ kind: 'network', status: undefined })
+    await expect(httpClient.getJson('arm', `${ARM}/unmocked-guard`)).rejects.toMatchObject({
+      kind: 'network',
+      status: undefined,
+    })
   })
 
   it('normalizes pasted tokens', () => {
@@ -82,8 +84,8 @@ describe('session store', () => {
   it('clearSession wipes tokens, IDs, the client token cache and the request log', async () => {
     sessionStore.getState().setToken('arm', armToken())
     sessionStore.getState().setSubscriptionId(TEST_SUB)
-    server.use(http.get('https://management.azure.com/x', () => HttpResponse.json({})))
-    await httpClient.getJson('arm', 'https://management.azure.com/x')
+    server.use(http.get(`${ARM}/x`, () => HttpResponse.json({})))
+    await httpClient.getJson('arm', `${ARM}/x`)
     expect(requestLogStore.getState().entries).toHaveLength(1)
 
     const resetClient = vi.spyOn(httpClient, 'reset')

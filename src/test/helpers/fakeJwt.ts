@@ -1,3 +1,5 @@
+import { API_RESOURCES } from '@/lib/token'
+
 /** Builds an unsigned, fictional JWT for tests. Never use real tokens in tests. */
 export function fakeJwt(payload: Record<string, unknown>): string {
   const enc = (value: unknown) =>
@@ -13,7 +15,7 @@ export const TEST_SUB = '00000000-0000-0000-0000-0000000000bb'
 
 export function armToken(overrides: Record<string, unknown> = {}): string {
   return fakeJwt({
-    aud: 'https://management.azure.com',
+    aud: API_RESOURCES.arm.resource,
     tid: TEST_TENANT,
     oid: '00000000-0000-0000-0000-000000000001',
     upn: 'dev@contoso.example.net',
@@ -23,5 +25,5 @@ export function armToken(overrides: Record<string, unknown> = {}): string {
 }
 
 export function graphToken(overrides: Record<string, unknown> = {}): string {
-  return armToken({ aud: 'https://graph.microsoft.com', ...overrides })
+  return armToken({ aud: API_RESOURCES.graph.resource, ...overrides })
 }
