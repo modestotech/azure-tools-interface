@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { API_RESOURCES } from '@/lib/token'
 import { APIM_API_VERSION, SUBSCRIPTIONS_API_VERSION } from '@/services/arm/apiVersion'
 import { armFixtures, SERVICE_NAME } from '@/test/fixtures/arm'
+import { graphHandlers } from './graph'
 
 export const ARM = API_RESOURCES.arm.baseUrl
 export const GRAPH = API_RESOURCES.graph.baseUrl
@@ -89,4 +90,5 @@ export const handlers = [
   armGet(`${SERVICE}/backends/:backendId`, APIM_API_VERSION, (param) =>
     known(param) ? armFixtures.backends[param('backendId')] : undefined,
   ),
+  ...graphHandlers,
 ]

@@ -2,6 +2,10 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** A domain name such as `contoso.onmicrosoft.com`: dot-separated labels of letters, digits and hyphens. */
 const DOMAIN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i
 
+export function isGuid(value: string): boolean {
+  return GUID.test(value)
+}
+
 /** Subscription IDs are always GUIDs. */
 export function isSubscriptionId(value: string): boolean {
   return GUID.test(value)

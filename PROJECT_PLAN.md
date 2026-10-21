@@ -89,11 +89,12 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 **M2 — `services/` (raw layer, Zod-validated)**
 - Every ID put into a path (`sub`, `svc`, `apiId`, `opId`, `backendId` from policy XML, Graph `id`) goes through `encodePathSegment()`. Test: a policy with `backend-id="../../x"` gives a per-resource `invalid-request` error and sends nothing.
 - `services/arm` (**done**, except the optional `GET {resourceId}`, which needs per-provider api-versions verified first): subscriptions (`/subscriptions`, api-version `2022-12-01`), services (including `identity.userAssignedIdentities` with `clientId`/`principalId`), APIs (list for the picker, including `serviceUrl`). For the selected API only: operations, policies at global / API / operation scope (`format=rawxml`, where 404 means "no policy"), each referenced backend via `backends/{backendId}`, and an optional `GET {resourceId}` that tolerates 403/404. Products, fragments and named values are out of scope (§1).
-- `services/graph`:
+- `services/graph` (**done**):
   - service principal lookups: by appId, by id, by `servicePrincipalNames` filter (used for both the inbound `audience` and the outbound `resource`)
   - `appRoles`, `appRoleAssignedTo` (inbound) and the user-assigned identity's `appRoleAssignments` (outbound)
   - groups and their *direct* members, with group-type members filtered out
-  - a `$batch` helper that chunks requests into groups of 20
+  - a `$batch` helper that chunks requests into groups of 20 (`batchGet`, `getServicePrincipalsByIds`), with a ResourceResult per lookup
+  - **Open:** service principal owners (`/servicePrincipals/{id}/owners`), needed for "who those service principals are" (CLAUDE.md › Project overview). Not in this list originally; add with a query key.
 - Each call gets a TanStack Query hook with stable keys (`['arm', sub, svc, 'apis']`, `['graph','sp',appId]`, …).
 - Errors are kept per resource; nothing fails globally.
 
