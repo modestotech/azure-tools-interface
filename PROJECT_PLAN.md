@@ -36,7 +36,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   1. `client-id` → the user-assigned identity in the APIM service's `identity.userAssignedIdentities` whose `clientId` matches → its `principalId`.
   2. `resource` → the target service principal, via the `servicePrincipalNames` filter.
   3. That identity's `appRoleAssignments`, filtered to the target service principal → the app roles APIM holds on the backend.
-- **Backend:** `backend-id` → the backend entity, its `url` and `resourceId`, plus an optional `GET {resourceId}`.
+- **Backend:** `backend-id` → the backend entity and its `url`. Backends are identified by URL only: the Azure resource behind one (e.g. a Container App) is not looked up, so there's no `GET {resourceId}`.
 
 **Out of scope for now:** `validate-azure-ad-token`, `check-header`, `include-fragment`, named-value resolution, `choose`, `send-request`, `set-backend-service base-url`, Pool backends and product-scope policies. The parser doesn't support them. Any of them found in `inbound` or `backend` becomes an `UnresolvedRule` ("needs manual review") so the app never stays silent. Elements that only affect responses (`set-header` other than `Authorization`, `rate-limit*`, `quota*`, `cors`, plus everything in `outbound` and `on-error`) are ignored.
 
@@ -88,7 +88,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 
 **M2 — `services/` (raw layer, Zod-validated)**
 - Every ID put into a path (`sub`, `svc`, `apiId`, `opId`, `backendId` from policy XML, Graph `id`) goes through `encodePathSegment()`. Test: a policy with `backend-id="../../x"` gives a per-resource `invalid-request` error and sends nothing.
-- `services/arm` (**done**, except the optional `GET {resourceId}`, which needs per-provider api-versions verified first): subscriptions (`/subscriptions`, api-version `2022-12-01`), services (including `identity.userAssignedIdentities` with `clientId`/`principalId`), APIs (list for the picker, including `serviceUrl`). For the selected API only: operations, policies at global / API / operation scope (`format=rawxml`, where 404 means "no policy"), each referenced backend via `backends/{backendId}`, and an optional `GET {resourceId}` that tolerates 403/404. Products, fragments and named values are out of scope (§1).
+- `services/arm` (**done**): subscriptions (`/subscriptions`, api-version `2022-12-01`), services (including `identity.userAssignedIdentities` with `clientId`/`principalId`), APIs (list for the picker, including `serviceUrl`). For the selected API only: operations, policies at global / API / operation scope (`format=rawxml`, where 404 means "no policy"), and each referenced backend via `backends/{backendId}` (URL only, no `GET {resourceId}`). Products, fragments and named values are out of scope (§1).
 - `services/graph` (**done**):
   - service principal lookups: by appId, by id, by `servicePrincipalNames` filter (used for both the inbound `audience` and the outbound `resource`)
   - `appRoles`, `appRoleAssignedTo` (inbound) and the user-assigned identity's `appRoleAssignments` (outbound)
@@ -153,9 +153,9 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - auth summary, source scope, backend and outbound auth
   - "needs manual review" badges
   - CSV/JSON export
-- `access-graph`: React Flow + elkjs, layered left to right: principal / member → operation → backend → resource. Node details show rules and outbound auth; ineffective edges are greyed out; group members lazy-load.
+- `access-graph`: React Flow + elkjs, layered left to right: principal / member → operation → backend. Node details show rules and outbound auth; ineffective edges are greyed out; group members lazy-load.
 - `principal-explorer`: pick a principal and see the operations it can reach, and why.
-- `backends`: backend entities, URL, TLS, the credential *mechanism* only, the resolved resource, and the roles APIM's user-assigned identity holds on it.
+- `backends`: backend entities, URL, TLS, the credential *mechanism* only, and the roles APIM's user-assigned identity holds on the backend's service principal.
 - One small ECharts summary on the landing page (auth coverage, findings by type).
 
 **M7 — Scripts (`scripts/registry.ts`) and a generic result renderer**

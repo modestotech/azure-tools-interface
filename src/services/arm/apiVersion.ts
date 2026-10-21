@@ -1,7 +1,6 @@
 /**
- * Every ARM api-version the app uses, in one place.
- * Per-provider versions for the optional `GET {resourceId}` lookup are added here in M2,
- * each verified against azure-rest-api-specs before it's pinned.
+ * Every ARM api-version the app uses, in one place. Backends are URL only, so there are no
+ * per-provider versions for looking up the resource behind a backend.
  */
 
 /**

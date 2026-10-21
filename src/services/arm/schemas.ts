@@ -139,7 +139,6 @@ export const backendSchema = z
       url: optionalString,
       protocol: optionalString,
       type: optionalString,
-      resourceId: optionalString,
       tls: z
         .looseObject({
           validateCertificateChain: z.boolean().nullish(),
@@ -158,7 +157,6 @@ export const backendSchema = z
     protocol: properties.protocol,
     /** `Single` unless ARM says otherwise (e.g. `Pool`, which is outside the supported pattern). */
     type: properties.type ?? 'Single',
-    resourceId: properties.resourceId,
     tls: {
       validateCertificateChain: properties.tls?.validateCertificateChain ?? undefined,
       validateCertificateName: properties.tls?.validateCertificateName ?? undefined,

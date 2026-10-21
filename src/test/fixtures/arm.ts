@@ -20,7 +20,8 @@ export const APIM_IDENTITY = {
   principalId: '00000000-0000-0000-0000-000000000012',
 }
 
-const ORDERS_APP_RESOURCE_ID = `/subscriptions/${TEST_SUB}/resourceGroups/rg-contoso-orders/providers/Microsoft.Web/sites/app-contoso-orders`
+/** The Container App behind `orders-backend`. ARM returns it; the app ignores it (backends are URL only). */
+const ORDERS_APP_RESOURCE_ID = `/subscriptions/${TEST_SUB}/resourceGroups/rg-contoso-orders/providers/Microsoft.App/containerApps/ca-contoso-orders`
 
 const operation = (
   apiId: string,
@@ -123,8 +124,8 @@ export const armFixtures = {
       name: 'orders-backend',
       properties: {
         title: 'Orders service',
-        description: 'App Service hosting the orders domain',
-        url: 'https://app-contoso-orders.example.net/api',
+        description: 'Container App hosting the orders domain',
+        url: 'https://ca-contoso-orders.example.net/api',
         protocol: 'http',
         type: 'Single',
         resourceId: `https://management.azure.com${ORDERS_APP_RESOURCE_ID}`,

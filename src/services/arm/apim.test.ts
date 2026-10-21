@@ -94,14 +94,14 @@ describe('ARM reads for the selected API', () => {
     expect(log.getState().counters.errors).toBe(0)
   })
 
-  it('reads a backend, keeping only the names of its credential mechanisms', async () => {
+  it('reads a backend by URL only, keeping just the names of its credential mechanisms', async () => {
     const { client } = testClient()
     const result = await getBackend(client, svc, 'orders-backend')
     expect(result).toEqual({
       status: 'ok',
       data: expect.objectContaining({
         name: 'orders-backend',
-        url: 'https://app-contoso-orders.example.net/api',
+        url: 'https://ca-contoso-orders.example.net/api',
         type: 'Single',
         tls: { validateCertificateChain: true, validateCertificateName: true },
         credentialMechanisms: ['header'],
@@ -109,6 +109,7 @@ describe('ARM reads for the selected API', () => {
     })
     expect(JSON.stringify(result)).not.toContain('x-functions-key')
     expect(JSON.stringify(result)).not.toContain('orders-function-key')
+    expect(result.status === 'ok' && result.data).not.toHaveProperty('resourceId')
   })
 
   it.each(['../../x', '..', 'a/b', 'x?y', ''])(

@@ -8,7 +8,7 @@ A client-side SPA that maps **Azure API Management (APIM) policies** to **Micros
 - Which service principals (apps / managed identities) are allowed to call each operation
 - Who those service principals are (display name, appId, owners, type)
 - If access is granted through a group, who is in that group (direct members only — nested groups are not expanded)
-- Which backend each operation routes to: backend type, URL, the Azure resource behind it, and how APIM authenticates to it (including APIM's own managed identity and what it has access to)
+- Which backend each operation routes to: backend type and URL, and how APIM authenticates to it (including APIM's own managed identity and what it has access to). Backends are identified by URL only; the Azure resource behind a backend is not looked up
 
 **One API at a time.** The analysis always runs against a single selected API, never the whole APIM instance. The only instance-wide calls are the ones needed to fill the pickers (list subscriptions, APIM services, API names), plus the service itself (for its `identity`) and the global policy. Don't add an "all APIs" option.
 
@@ -162,7 +162,7 @@ New visualizations and analyses plug in through registries, not by editing the a
 
 ### APIM (ARM, `https://management.azure.com`)
 
-Base URLs come only from `API_RESOURCES[api].baseUrl` (`lib/token/resources.ts`). Every ARM api-version lives in `services/arm/apiVersion.ts` (`APIM_API_VERSION`, `SUBSCRIPTIONS_API_VERSION`; per-provider versions for `GET {resourceId}` are added there, verified first). Never hard-code hosts or versions elsewhere, tests included. Resources to fetch:
+Base URLs come only from `API_RESOURCES[api].baseUrl` (`lib/token/resources.ts`). Every ARM api-version lives in `services/arm/apiVersion.ts` (`APIM_API_VERSION`, `SUBSCRIPTIONS_API_VERSION`). Never hard-code hosts or versions elsewhere, tests included. Resources to fetch:
 
 - Subscriptions the user can access (for the picker): `/subscriptions?api-version=2022-12-01` (Microsoft.Resources, not the APIM api-version)
 - APIM services in the subscription (for the picker): `/subscriptions/{sub}/providers/Microsoft.ApiManagement/service`
@@ -173,10 +173,10 @@ Base URLs come only from `API_RESOURCES[api].baseUrl` (`lib/token/resources.ts`)
   - Global: `.../service/{svc}/policies/policy`
   - API: `.../apis/{apiId}/policies/policy`
   - Operation: `.../apis/{apiId}/operations/{opId}/policies/policy`
-- Backends referenced by the API's policies, one by one: `.../service/{svc}/backends/{backendId}` — `title`, `description`, `url`, `protocol`, `type` (expected `Single`), `resourceId` (the Azure resource behind it, e.g. App Service, Function App, Container App), `tls` settings, and `credentials` (record only *which* auth mechanism is configured, never values)
+- Backends referenced by the API's policies, one by one: `.../service/{svc}/backends/{backendId}` — `title`, `description`, `url`, `protocol`, `type` (expected `Single`), `tls` settings, and `credentials` (record only *which* auth mechanism is configured, never values)
 - The API's `serviceUrl` property, which is the default backend when no policy overrides it
 - The APIM service's `identity`, especially `userAssignedIdentities` (`clientId` → `principalId`), for outbound managed-identity auth
-- Optionally, `GET {resourceId}` (with the matching provider `api-version`) to show the backend resource's kind, location and hostname; tolerate 403/404 since the user may lack access
+- **Backends are URL only.** A backend's `resourceId` (e.g. a Container App) is not fetched: no `GET {resourceId}` and no per-provider api-versions. Don't add one without a decision to widen the scope.
 
 A 404 on a policy endpoint means "no policy at that scope". Fetch those with `getJsonOrNull`, which returns `null` and logs the request as `empty`. Don't catch the 404 by hand.
 
@@ -234,10 +234,10 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - `AccessRule` (operation, source scope, kind, constraint values) and `UnresolvedRule`
 - `Principal` — discriminated union: `ServicePrincipal` | `User` | `Group` | `ManagedIdentity`
 - `AppRole`, `AppRoleAssignment`, `GroupMembership`
-- `Backend` — `id`, `title`, `url`, `protocol`, `type` (`Single` | `ApiServiceUrl`), `resourceId`, resolved resource info
+- `Backend` — `id`, `title`, `url`, `protocol`, `type` (`Single` | `ApiServiceUrl`)
 - `BackendBinding` — operation → backend, source scope
 - `OutboundAuth` — mechanism (`ManagedIdentity` | `None`), identity used (user-assigned `clientId` / `principalId`), target audience / service principal, app roles held
-- `AccessEdge` — the graph edge set the visualizations render (`principal/group member → operation → backend → backend resource`, with rules and outbound auth as edge/node details)
+- `AccessEdge` — the graph edge set the visualizations render (`principal/group member → operation → backend`, with rules and outbound auth as edge/node details)
 
 ## Conventions
 
