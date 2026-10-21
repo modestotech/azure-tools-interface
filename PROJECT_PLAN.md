@@ -82,7 +82,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - **Code quality review follow-ups (open, 2026-10-18), most severe first.** Fix them before M2 builds on the client:
   - ~~Validation failures after `send()` are logged as `ok`.~~ Done: `send()` validates against a Zod schema before finishing the log entry, and `getJson` / `getJsonOrNull` / `getAllPages` accept a `schema` for services. A `$batch` log line shows how many sub-responses failed.
   - ~~Requests have no timeout.~~ Done: each attempt combines the caller's signal with `AbortSignal.timeout(requestTimeoutMs)` (default 30 s, counted from leaving the queue, covering the body read) and fails as kind `timeout`. Queued limiter tasks drop out when their signal aborts.
-  - `send()` (85 lines) handles the guards, logging, retries, body reading, error mapping and JSON parsing. Split it into `fetchWithRetry()` and `readResponse()`, which also removes the duplicated abort/network catch.
+  - ~~`send()` (85 lines) does everything.~~ Done: split into `fetchWithRetry()` (send + retries), `readResponse()` (no I/O: received response → `Outcome`) and `settleLog()` (log entry matches the caller's result). One catch now covers fetch, retry wait and body read.
   - `batchChunk`: extract a pure `partitionBatchResponses()`, comment the shared retry-budget rule, rename `r`/`p`/`retry`/`wait`, and treat unknown or duplicate response ids as `invalid-response` instead of skipping them.
   - Renames:
     - `HttpErrorKind 'http'` → `'unexpected-status'`

@@ -151,6 +151,16 @@ function batchLabel(sent: number, statuses: readonly number[]): string {
   return failed > 0 ? `${label} · ${String(failed)} failed` : label
 }
 
+/** Parses a response body; an empty body is `null`. */
+function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
+  if (!text) return { ok: true, value: null }
+  try {
+    return { ok: true, value: JSON.parse(text) as unknown }
+  } catch {
+    return { ok: false }
+  }
+}
+
 /** A short description of why a response failed its schema. Masked by the caller. */
 function schemaMismatch(error: z.ZodError): string {
   const issue = error.issues[0]
@@ -278,18 +288,22 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     retryBudget?: RetryBudget
   }
 
-  interface SendResult<T> {
-    json: T
-    headers: Headers
+  /** One request as it goes on the wire, after the guards have passed. */
+  interface Outgoing {
+    method: HttpMethod
+    url: string
+    token: string
+    body: unknown
+    signal: AbortSignal | undefined
   }
 
-  function fetchOnce(
-    method: HttpMethod,
-    url: string,
-    token: string,
-    body: unknown,
-    signal: AbortSignal | undefined,
-  ): Promise<Response> {
+  /** How a request ended. `settleLog()` turns it into the log entry and the caller's result. */
+  type Outcome<T> =
+    | { state: 'ok'; data: T; status: number; bytes: number; label: string | undefined }
+    | { state: 'empty'; data: T; status: number; bytes: number }
+    | { state: 'error'; error: HttpError; status?: number | undefined; bytes?: number | undefined }
+
+  function fetchOnce({ method, url, token, body, signal }: Outgoing): Promise<Response> {
     return limiter.run(() => {
       // The clock starts here, once a slot is free. The response body reads under the same signal.
       const timeout = AbortSignal.timeout(requestTimeoutMs)
@@ -308,6 +322,24 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       })
     }, signal)
+  }
+
+  /**
+   * Sends the request, retrying 429 / 503 while `budget` lasts, and returns the last response.
+   * Rejects as fetch does (network failure, timeout, abort), also during the wait between attempts.
+   */
+  async function fetchWithRetry(
+    request: Outgoing,
+    budget: RetryBudget,
+    onRetry: (status: number) => void,
+  ): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetchOnce(request)
+      if (!isRetryableStatus(response.status) || budget.left <= 0) return response
+      budget.left--
+      onRetry(response.status)
+      await sleep(retryDelayMs(response.headers.get('Retry-After'), attempt), request.signal)
+    }
   }
 
   /** Maps a non-OK response (after retries) to the matching typed error. */
@@ -353,6 +385,58 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
   }
 
   /**
+   * Decides how a received response ends: an expected 404, a typed HTTP error, invalid JSON, a
+   * schema mismatch, or validated data. No I/O.
+   */
+  function readResponse<T>(
+    api: ApiKind,
+    response: Response,
+    text: string,
+    maskedUrl: string,
+    extra: SendExtra<T>,
+  ): Outcome<T> {
+    const { status } = response
+    const bytes = new TextEncoder().encode(text).byteLength
+    const failed = (error: HttpError): Outcome<T> => ({ state: 'error', error, status, bytes })
+    const invalid = (message: string) =>
+      failed(new HttpError('invalid-response', api, message, { status, url: maskedUrl }))
+
+    if (status === 404 && extra.notFound) {
+      return { state: 'empty', data: extra.notFound.value, status, bytes }
+    }
+    if (!response.ok) return failed(toHttpError(api, response, text, maskedUrl))
+    const json = parseJson(text)
+    if (!json.ok) return invalid('Response was not valid JSON.')
+    const parsed = extra.schema.safeParse(json.value)
+    if (!parsed.success) return invalid(mask(schemaMismatch(parsed.error)))
+    return {
+      state: 'ok',
+      data: parsed.data,
+      status,
+      bytes,
+      label: extra.finishLabel?.(parsed.data),
+    }
+  }
+
+  /** Finishes the log entry to match what the caller gets: the data, or the thrown error. */
+  function settleLog<T>(id: number, outcome: Outcome<T>): T {
+    if (outcome.state === 'error') {
+      const { error, status, bytes } = outcome
+      logger.finish(id, {
+        state: 'error',
+        status,
+        bytes,
+        error: error.message,
+        errorKind: error.kind,
+      })
+      throw error
+    }
+    const { state, status, bytes } = outcome
+    logger.finish(id, { state, status, bytes, label: state === 'ok' ? outcome.label : undefined })
+    return outcome.data
+  }
+
+  /**
    * Guards, logs and sends one request, retrying 429 / 503 within the budget. The log entry finishes
    * as `ok` only once the response has passed `extra.schema`.
    */
@@ -363,12 +447,11 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     body: unknown,
     options: RequestOptions,
     extra: SendExtra<T>,
-  ): Promise<SendResult<T>> {
+  ): Promise<T> {
     assertReadOnly(api, method, url, body)
     assertHost(api, url)
     const token = requireValidToken(api)
     const maskedUrl = mask(url)
-    const budget = extra.retryBudget ?? { left: maxRetries }
 
     const id = logger.start({
       api,
@@ -379,39 +462,19 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
       queryKey: options.queryKey ? mask(JSON.stringify(options.queryKey)) : undefined,
     })
 
-    const fail = (error: HttpError, status?: number, bytes?: number): never => {
-      logger.finish(id, {
-        state: 'error',
-        status,
-        bytes,
-        error: error.message,
-        errorKind: error.kind,
-      })
-      throw error
-    }
-
-    let response: Response
-    try {
-      for (let attempt = 0; ; attempt++) {
-        response = await fetchOnce(method, url, token, body, options.signal)
-        if (!isRetryableStatus(response.status) || budget.left <= 0) break
-        budget.left--
-        logger.retry(id, response.status)
-        await sleep(retryDelayMs(response.headers.get('Retry-After'), attempt), options.signal)
-      }
-    } catch (error) {
-      const cause = failureCause(error, options.signal)
-      if (cause === 'cancelled') {
-        logger.finish(id, { state: 'cancelled' })
-        throw error
-      }
-      return fail(cause === 'timeout' ? timeoutError(api, maskedUrl) : networkError(api, maskedUrl))
-    }
-
+    let response: Response | undefined
     let text: string
     try {
+      response = await fetchWithRetry(
+        { method, url, token, body, signal: options.signal },
+        extra.retryBudget ?? { left: maxRetries },
+        (status) => {
+          logger.retry(id, status)
+        },
+      )
       text = await response.text()
     } catch (error) {
+      // Sending, waiting to retry and reading the body all fail the same three ways.
       const cause = failureCause(error, options.signal)
       if (cause === 'cancelled') {
         logger.finish(id, { state: 'cancelled' })
@@ -419,57 +482,21 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
       }
       const failure =
         cause === 'timeout' ? timeoutError(api, maskedUrl) : networkError(api, maskedUrl)
-      return fail(failure, response.status)
+      return settleLog(id, { state: 'error', error: failure, status: response?.status })
     }
-    const bytes = new TextEncoder().encode(text).byteLength
-
-    if (response.status === 404 && extra.notFound) {
-      logger.finish(id, { state: 'empty', status: 404, bytes })
-      return { json: extra.notFound.value, headers: response.headers }
-    }
-    if (!response.ok) {
-      return fail(toHttpError(api, response, text, maskedUrl), response.status, bytes)
-    }
-
-    let json: unknown = null
-    if (text) {
-      try {
-        json = JSON.parse(text)
-      } catch {
-        const error = new HttpError('invalid-response', api, 'Response was not valid JSON.', {
-          status: response.status,
-          url: maskedUrl,
-        })
-        return fail(error, response.status, bytes)
-      }
-    }
-    const parsed = extra.schema.safeParse(json)
-    if (!parsed.success) {
-      const error = new HttpError('invalid-response', api, mask(schemaMismatch(parsed.error)), {
-        status: response.status,
-        url: maskedUrl,
-      })
-      return fail(error, response.status, bytes)
-    }
-    logger.finish(id, {
-      state: 'ok',
-      status: response.status,
-      bytes,
-      label: extra.finishLabel?.(parsed.data),
-    })
-    return { json: parsed.data, headers: response.headers }
+    return settleLog(id, readResponse(api, response, text, maskedUrl, extra))
   }
 
   type CallOptions<T> = RequestOptions & { schema?: z.ZodType<T> | undefined }
 
   async function getJson<T>(api: ApiKind, url: string, options: CallOptions<T> = {}) {
     const extra = { schema: schemaOf(options) }
-    return (await send(api, 'GET', url, undefined, options, extra)).json
+    return send(api, 'GET', url, undefined, options, extra)
   }
 
   async function getJsonOrNull<T>(api: ApiKind, url: string, options: CallOptions<T> = {}) {
     const extra = { schema: schemaOf(options).nullable(), notFound: { value: null } }
-    return (await send(api, 'GET', url, undefined, options, extra)).json
+    return send(api, 'GET', url, undefined, options, extra)
   }
 
   async function getAllPages<T>(api: ApiKind, url: string, options: CallOptions<T> = {}) {
@@ -500,7 +527,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     for (let attempt = 0; pending.length > 0; attempt++) {
       const body = { requests: pending.map((r) => ({ id: r.id, method: 'GET', url: r.url })) }
       const sent = pending.length
-      const { json } = await send('graph', 'POST', GRAPH_BATCH_URL, body, options, {
+      const json = await send('graph', 'POST', GRAPH_BATCH_URL, body, options, {
         schema: batchResponseSchemaFor(pending),
         label: batchLabel(sent, []),
         finishLabel: (data) =>
