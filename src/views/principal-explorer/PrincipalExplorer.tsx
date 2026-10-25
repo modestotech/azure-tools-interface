@@ -2,14 +2,14 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useMemo, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
 import {
   PRINCIPAL_KIND_LABEL,
   principalLabel,
   principalReach,
   reachedOperationIds,
   type PrincipalReach,
-} from '../shared/reach'
+} from '@/domain'
+import { cn } from '@/lib/utils'
 import type { ViewProps } from '../types'
 import { PrincipalDetails } from './PrincipalDetails'
 

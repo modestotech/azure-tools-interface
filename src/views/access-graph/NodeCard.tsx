@@ -1,7 +1,7 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { SeverityBadge } from '@/components/SeverityBadge'
 import { cn } from '@/lib/utils'
-import { PRINCIPAL_KIND_LABEL } from '../shared/reach'
+import { PRINCIPAL_KIND_LABEL } from '@/domain'
 import { nodeTitle, type AccessNode } from './elements'
 
 export type FlowNode = Node<

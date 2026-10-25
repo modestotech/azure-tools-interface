@@ -6,7 +6,7 @@ import {
   principalLabel,
   type PrincipalReach,
   type ReachPath,
-} from '../shared/reach'
+} from '@/domain'
 
 function operationName(model: AccessModel, operationId: string) {
   return model.operations.find((item) => item.operation.id === operationId)?.operation

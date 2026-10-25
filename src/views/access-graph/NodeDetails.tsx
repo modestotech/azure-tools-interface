@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { AccessModel } from '@/domain'
 import { FindingList } from '../shared/FindingList'
-import { PRINCIPAL_KIND_LABEL, principalLabel, principalReach } from '../shared/reach'
+import { PRINCIPAL_KIND_LABEL, principalLabel, principalReach } from '@/domain'
 import { authSummary, authText, operationFindings, outboundText } from '../shared/summaries'
 import { nodeTitle, type AccessNode } from './elements'
 

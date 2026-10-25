@@ -1,4 +1,5 @@
-import type { AccessModel, Principal } from '@/domain'
+import type { AccessModel } from './mapper'
+import type { Principal } from './model'
 
 /**
  * Who reaches which operation, and how: a role held directly, or a role a group holds, reached by

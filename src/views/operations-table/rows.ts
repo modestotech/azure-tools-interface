@@ -1,5 +1,5 @@
 import type { AccessModel, Backend, Finding, OutboundAuth, PolicyScope, Severity } from '@/domain'
-import { callersByOperation } from '../shared/reach'
+import { callersByOperation } from '@/domain'
 import {
   authSummary,
   authText,

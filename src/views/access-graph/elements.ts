@@ -1,5 +1,5 @@
 import type { AccessModel, Backend, OperationAccess, Principal, Severity } from '@/domain'
-import { principalLabel } from '../shared/reach'
+import { principalLabel } from '@/domain'
 import { operationFindings, outboundText, worstSeverity } from '../shared/summaries'
 
 /**

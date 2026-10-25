@@ -140,6 +140,7 @@ src/
       elements.ts      #   the element table (supported / ignored / unresolved) and the extractors
       analyze.ts       #   analyzeOperationPolicy: effective inbound/backend rules of one operation
     findings.ts        # every Finding kind with its severity (FINDING_INFO)
+    reach.ts           # who reaches which operation, directly or through a group (from the model's edges)
     mapper/            # joins APIM rules with Entra objects into the access graph
       buildAccessModel.ts  # pure: AccessModelInputs (each part may still be loading) → AccessModel
       inbound.ts / outbound.ts  # who may call; where it goes and how APIM authenticates
@@ -151,8 +152,7 @@ src/
     principal-explorer/
     backends/
     overview/          #   the landing page's ECharts summary; not a registered view, the shell lazy-loads it
-    shared/            #   pure helpers shared by views: summaries.ts (auth/outbound text), reach.ts
-                       #   (who reaches which operation, and how), FindingList
+    shared/            #   pure helpers shared by views: summaries.ts (auth/outbound text), FindingList
   scripts/             # read-only analyses, registered in scripts/registry.ts
   components/          # shared UI
     request-log/       #   the Matrix log: presentational, fed by LogDock (app/layout) from requestLogStore + uiStore
