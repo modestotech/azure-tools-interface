@@ -1,4 +1,5 @@
 import type { AccessModel, Backend, Finding, FindingKind, OutboundAuth } from '@/domain'
+import { appendTo } from '@/lib/collections'
 
 /**
  * One entry per backend the API's operations route to, with how APIM authenticates there. Pure,
@@ -60,8 +61,7 @@ function concerns(finding: Finding, key: string, operationIds: ReadonlySet<strin
 export function backendRows(model: AccessModel): BackendRow[] {
   const routed = new Map<string, string[]>()
   for (const edge of model.edges) {
-    if (edge.kind === 'route')
-      routed.set(edge.backendKey, [...(routed.get(edge.backendKey) ?? []), edge.operationId])
+    if (edge.kind === 'route') appendTo(routed, edge.backendKey, edge.operationId)
   }
   return [...routed].map(([key, operationIds]) => {
     const ids = new Set(operationIds)

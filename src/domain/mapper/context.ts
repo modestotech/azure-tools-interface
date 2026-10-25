@@ -8,8 +8,12 @@ export interface MapperContext {
   readonly principals: Map<string, Principal>
   readonly backends: Map<string, Backend>
   readonly edges: AccessEdge[]
-  /** `groupId/memberId` of membership edges already added; a group can grant many operations. */
-  readonly memberships: Set<string>
+  /**
+   * Role holders already added, and groups whose members were read. A holder can reach many
+   * operations, and what it adds doesn't depend on which, so each is done once.
+   */
+  readonly addedHolders: Set<string>
+  readonly readGroups: Set<string>
 }
 
 /** The principal's fields that are known (not undefined). */

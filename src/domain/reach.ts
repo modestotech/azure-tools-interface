@@ -1,3 +1,4 @@
+import { appendTo } from '@/lib/collections'
 import type { AccessModel } from './mapper'
 import type { Principal } from './model'
 
@@ -50,12 +51,11 @@ type Membership = Extract<AccessModel['edges'][number], { kind: 'membership' }>
 export function principalReach(model: AccessModel): PrincipalReach[] {
   const members = new Map<string, Membership[]>()
   for (const edge of model.edges) {
-    if (edge.kind === 'membership')
-      members.set(edge.groupId, [...(members.get(edge.groupId) ?? []), edge])
+    if (edge.kind === 'membership') appendTo(members, edge.groupId, edge)
   }
   const paths = new Map<string, ReachPath[]>()
   const add = (id: string, path: ReachPath) => {
-    paths.set(id, [...(paths.get(id) ?? []), path])
+    appendTo(paths, id, path)
   }
   for (const edge of model.edges) {
     if (edge.kind !== 'grant') continue
@@ -78,16 +78,24 @@ export function principalReach(model: AccessModel): PrincipalReach[] {
     .sort((a, b) => principalLabel(a.principal).localeCompare(principalLabel(b.principal)))
 }
 
-/** Per operation, the principals that can call it. */
+/**
+ * Per operation, the principals that can call it: non-group role holders, and the users in a
+ * granting group. Read from the edges directly rather than through `principalReach()`, which
+ * would build a path object for every member of every group on every operation.
+ */
 export function callersByOperation(model: AccessModel): Map<string, Set<string>> {
+  const effectiveMembers = new Map<string, string[]>()
+  for (const edge of model.edges) {
+    if (edge.kind === 'membership' && edge.effective)
+      appendTo(effectiveMembers, edge.groupId, edge.memberId)
+  }
   const callers = new Map<string, Set<string>>()
-  for (const { principal, paths } of principalReach(model)) {
-    for (const path of paths) {
-      if (!canCall(principal, path)) continue
-      const set = callers.get(path.operationId) ?? new Set()
-      set.add(principal.id)
-      callers.set(path.operationId, set)
-    }
+  for (const edge of model.edges) {
+    if (edge.kind !== 'grant') continue
+    let set = callers.get(edge.operationId)
+    if (!set) callers.set(edge.operationId, (set = new Set()))
+    if (model.principals.get(edge.principalId)?.kind !== 'group') set.add(edge.principalId)
+    else for (const member of effectiveMembers.get(edge.principalId) ?? []) set.add(member)
   }
   return callers
 }

@@ -120,6 +120,8 @@ function callersOfRule(context: MapperContext, operationId: string, rule: JwtVal
 
 function addHolder(context: MapperContext, holder: Holder): void {
   const { principalId: id, displayName } = holder
+  if (context.addedHolders.has(id)) return
+  context.addedHolders.add(id)
   switch (holder.principalType) {
     case 'User':
       addPrincipal(context, { kind: 'user', id, displayName, userPrincipalName: undefined })
@@ -148,12 +150,15 @@ const NOT_EFFECTIVE =
   'Group roles only reach users. An app or managed identity calling with its own identity gets only roles assigned to it directly.'
 
 function addMembers(context: MapperContext, groupId: string, groupName: string | undefined): void {
+  if (context.readGroups.has(groupId)) return
+  context.readGroups.add(groupId)
   const what = `members of group ${groupName ?? groupId}`
   const members = read(context.collector, what, context.inputs.groupMembers.get(groupId))
+  // Graph lists each member once, but paging can repeat one; draw a membership once.
+  const seen = new Set<string>()
   for (const member of members ?? []) {
-    const key = `${groupId}/${member.id}`
-    if (context.memberships.has(key)) continue
-    context.memberships.add(key)
+    if (seen.has(member.id)) continue
+    seen.add(member.id)
     const principal = memberPrincipal(member)
     addPrincipal(context, principal)
     const effective = principal.kind === 'user'

@@ -76,7 +76,8 @@ export function buildAccessModel(inputs: AccessModelInputs): AccessModel {
     principals: new Map(),
     backends: new Map(),
     edges: [],
-    memberships: new Set(),
+    addedHolders: new Set(),
+    readGroups: new Set(),
   }
   const access = operations.map((operation): OperationAccess => {
     const policy = policies.get(operation.id)
