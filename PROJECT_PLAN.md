@@ -169,10 +169,13 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - HTTP / no-outbound-auth backends, plus the other backend and outbound-identity findings, one row per backend and issue
   - unresolved rules, with the XML to review
 
-**M8 — Hardening**
-- CORS check against real ARM/Graph (you run this, see §6). Add a Vite proxy only if needed, and document it in CLAUDE.md › Known gotchas.
+**M8 — Hardening** (done; one optional live check left, see §6)
+- CORS check against real ARM (**done**): from the dev server and from the production build (`pnpm preview`), ARM calls pass CORS, so no Vite proxy is needed. Graph hasn't been checked live yet; that comes with the "ARM and Entra" live check (§6).
 - Large-tenant performance pass (**done**): on a synthetic tenant of 300 operations, 1,300 role holders and 30 groups of 200 members (405,000 edges), building the model went from 0.9 s to 0.2 s, the operations table rows from 4.5 s to 0.2 s and the broad-access script from 3.9 s to 0.35 s (quadratic list copies, per-operation repeats in the mapper, linear lookups). The access graph draws at most 1,500 edges and has an operation filter. `largeTenantInputs()` (`test/fixtures/largeTenant.ts`) generates such a tenant; `domain/largeTenant.test.ts` checks the counts. Not changed: group members are still fetched for every granting group up front, since the findings need them.
 - README (**done**).
+- Read-only hardening (**done**): a second, independent guard at the browser's network APIs (`lib/http/networkGuard.ts`), loaded before any other code, and a test that records every request a whole run sends (`app/readOnlyWire.test.tsx`). See CLAUDE.md › Authentication model.
+- ARM-only mode (**done**): analyzes an API without Microsoft Graph, so with a `Reader`-only ARM account Azure itself refuses any write. The network guard then refuses every Graph request. The default stays "ARM and Entra".
+- From the live check (**done**): the pickers search by substring with `*` as a wildcard ("02" finds "APIM0002"). A policy that fails to load or parse now makes the operation's policy unknown, instead of falling back to the API's service URL and reporting "no auth" or "no credentials".
 - ~~CSP~~ done in M4: one definition (`security.config.ts`) emitted both as the `<meta>` tag in `index.html` and as `globalHeaders` in `staticwebapp.config.json`; `connect-src` limited to the ARM and Graph origins. `tests/security/build.test.ts` checks that the two match.
 
 ## 3. Key design decisions
@@ -198,7 +201,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - group members that are SP/MI vs. users; a required role missing from `appRoles`
 - `pnpm dev` in MSW demo mode: the full flow renders and the log streams.
 - `pnpm build`, then `pnpm preview`: deep links work through the fallback.
-- **Live smoke test, run by you**: paste real tokens against a test APIM and report anything wrong. I never see the tokens.
+- **Live smoke test, run by you**: paste real tokens against a test APIM and report anything wrong. I never see the tokens. Done in ARM-only mode; "ARM and Entra" is open (§6).
 
 ## 6. What I need from you (anonymized, never committed raw)
 
@@ -206,12 +209,13 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 
 **Not needed up front — ARM/Graph JSON.** Public docs cover the response shapes, so fixtures are built from them. Real samples are only requested if the live smoke test shows a shape mismatch.
 
-**Now, M8 — live checks** (you run these; I never see the tokens):
-1. `pnpm dev`, open the app. **Start in ARM-only mode** with the ARM token of a `Reader`-only account: Azure then refuses any write, whatever the app did. Use "ARM and Entra" only with an account you accept for Entra (no admin roles, owning no apps or groups), and check the request log there too.
-2. **CORS:** pick a subscription, an APIM instance and an API. In the request log, ARM lines (subscriptions, services, APIs, policies) and, in "ARM and Entra" mode, Graph lines (service principals, `appRoleAssignedTo`, group members, and the `POST $batch` for service principal details) should end with a status, not `✗ network`. In ARM-only mode there must be no Graph line at all. A `✗ network` line whose browser console shows a CORS error means that endpoint needs a Vite dev proxy: tell me which one.
-3. **§1 assumptions:** do the operations, callers, backends and outbound auth match what you know of the API? Anything in "needs manual review" that should be supported, or a finding that's wrong?
+**M8 — live checks** (you run these; I never see the tokens). Done in ARM-only mode with a `Reader` account; "ARM and Entra" is still open:
+1. (**done** in ARM-only mode) `pnpm dev`, open the app. **Start in ARM-only mode** with the ARM token of a `Reader`-only account: Azure then refuses any write, whatever the app did. Use "ARM and Entra" only with an account you accept for Entra (no admin roles, owning no apps or groups), and check the request log there too.
+2. **CORS** (**done for ARM**; Graph open): pick a subscription, an APIM instance and an API. In the request log, ARM lines (subscriptions, services, APIs, policies) and, in "ARM and Entra" mode, Graph lines (service principals, `appRoleAssignedTo`, group members, and the `POST $batch` for service principal details) should end with a status, not `✗ network`. In ARM-only mode there must be no Graph line at all. A `✗ network` line whose browser console shows a CORS error means that endpoint needs a Vite dev proxy: tell me which one.
+3. **§1 assumptions** (**done** in ARM-only mode; callers and groups open): do the operations, callers, backends and outbound auth match what you know of the API? Anything in "needs manual review" that should be supported, or a finding that's wrong?
 4. **401 / 403** (**401 done, 403 skipped**): real ARM and Graph 401 bodies (a GET with a made-up token) are anonymized in `src/test/fixtures/errors.ts`, and the client test reads them. A 403 couldn't be provoked with reads; the client maps it by status alone, so it isn't needed.
-5. Try `pnpm build && pnpm preview` once, to see the CSP and headers in a production build.
+5. (**done**) Try `pnpm build && pnpm preview` once, to see the CSP and headers in a production build. The guard refuses a `fetch(…, { method: 'PUT' })` typed into the console.
+6. **Still open, optional:** steps 2 and 3 in "ARM and Entra" mode, with an account you accept for Entra. Until then, Graph's CORS, callers and group members haven't been checked against a real tenant.
 
 **Where to put any further samples**: drop raw files in `samples-raw/` (gitignored). I write anonymized copies to `src/test/fixtures/`; only those get committed.
 
