@@ -47,14 +47,19 @@ pnpm dev:demo     # fictional demo data, no Azure token needed: click "Fill in d
 
 ## Using it against Azure
 
-Sign in with `az login`, then get one token per API and paste both into the app:
+Sign in with `az login`, choose a mode on the token screen, and paste the token(s):
 
 ```bash
+# ARM: always needed
 az account get-access-token --resource https://management.azure.com --tenant <TENANT_ID> --query accessToken -o tsv
+# Graph: only for "ARM and Entra"
 az account get-access-token --resource https://graph.microsoft.com --tenant <TENANT_ID> --query accessToken -o tsv
 ```
 
-Your account needs `Reader` (or `API Management Service Reader Role`) on the APIM instance, plus read access to the Entra directory. Use an account without write or Owner roles if you can.
+- **ARM only:** just the ARM token. Use an account with only `Reader` (or `API Management Service Reader Role`) on the APIM instance, and Azure itself refuses any change. You get operations, policies, backends, outbound auth and the findings those show. You don't get who can call.
+- **ARM and Entra:** also the Graph token, for who holds the API's roles and who is in the groups. A Graph token from the Azure CLI can do whatever your account may do in Entra, so prefer an account with no Entra admin roles that owns no apps or groups.
+
+Either way the app only reads. Two separate guards refuse anything else before it leaves the browser; in ARM-only mode they also refuse every request to Graph.
 
 Tokens last about an hour. When one expires, the app says so and shows the command to run again; "Clear session" wipes tokens, selections and loaded data.
 

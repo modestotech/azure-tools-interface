@@ -40,7 +40,7 @@ Don't commit any code before consulting me. Commit messages: a short title, then
 
 There is no app registration and no MSAL login. The user runs `az login` and pastes tokens into the UI.
 
-**Two tokens are required**, because a token is only valid for one audience:
+**Two tokens are needed** for the full analysis, because a token is only valid for one audience. In **ARM-only mode** only the ARM token is (see below):
 
 ```bash
 # ARM token — used for APIM
@@ -59,9 +59,19 @@ Rules:
 - Decode the JWT (no validation needed) to show `aud`, `tid`, `upn`/`oid` and `exp`. Warn if `aud` doesn't match the expected resource, if `tid` doesn't match the entered tenant, or if the token expires soon (they typically last ~60–90 min).
 - The HTTP client refuses to send when the token is missing (`no-token`), can't be decoded (`invalid-token`), is for the wrong audience (`audience-mismatch`), or has expired (`token-expired`, with the az command). A tenant mismatch or a token about to expire is only a warning on the token screen.
 - On 401, surface a clear "token expired or wrong audience — re-run az command" message with the exact command to copy (`HttpError.azCommand`).
-- The app is strictly **read-only**: only `GET` requests (plus Graph `$batch`, which wraps GETs). Never add calls that modify Azure or Entra.
+- The app is strictly **read-only**: only `GET` requests (plus Graph `$batch`, which wraps GETs). Never add calls that modify Azure or Entra. Two independent guards enforce it, and neither may be weakened or bypassed:
+  - the HTTP client's `assertReadOnly()` (`lib/http/readOnly.ts`), before a request is built;
+  - the network guard (`lib/http/networkGuard.ts`), which wraps the browser's `fetch`, `XMLHttpRequest` and `sendBeacon` themselves. It shares no code with the first guard. `src/readOnlyGuard.ts` installs it as a module script of its own ahead of the app's in `index.html`, and its chunk is the entry's first import (`codeSplitting` in `vite.config.ts`). Every test runs with it installed (`test/setup.ts`).
 
-Required permissions for the signed-in user: `Reader` (or `API Management Service Reader Role`) on the APIM instance; directory read access in Entra (the default Azure CLI Graph token works for reading service principals, groups and members in most tenants).
+  `app/readOnlyWire.test.tsx` records every request a whole run sends, in both modes. `tests/security/build.test.ts` checks that the guard loads first, and that the shipped JavaScript holds no `PUT`, `PATCH` or `DELETE`.
+- **ARM-only mode** (`entra: false` in `sessionStore`, chosen on the token screen) uses no Graph at all:
+  - **Session:** no Graph token is kept (`setToken('graph', …)` is ignored), and cached Graph results are dropped on switching.
+  - **Network guard:** it refuses any request to Graph (`setGraphAllowed`, kept in sync by the session store), so a GET to ARM is the only request that can leave the browser.
+  - **Model:** `useAccessModel(svc, api, entra)` takes the mode as a required argument and keeps every Graph hook idle. The model then has `entra: false`: no principals or grants, and outbound auth without targets or roles. Findings that need Entra data aren't raised.
+  - **Views and scripts:** a view says what needs Entra (`NEEDS_ENTRA`, `ArmOnlyNote`) rather than showing "none" or 0. A script declares `needsEntra`; one that needs it isn't run in this mode.
+  - **Default:** ARM and Entra. "Clear session" resets to it.
+
+Required permissions for the signed-in user: `Reader` (or `API Management Service Reader Role`) on the APIM instance; directory read access in Entra (the default Azure CLI Graph token works for reading service principals, groups and members in most tenants). The ARM token of a Reader-only account can't change anything, whatever the app did. A Graph token from the Azure CLI can do whatever the account may do in Entra, which is why ARM-only mode exists.
 
 ## Tech stack
 
@@ -165,7 +175,7 @@ Layering is one-way: `views` / `scripts` → `domain` → `services` → `lib`. 
 
 Services take an `HttpClient` as a parameter and never import from `app/`. The single instance lives in `app/session/httpClient.ts` and is passed in by the app shell; tests pass their own.
 
-Module-level state in `lib/` is limited to `requestLogStore` (`lib/http/requestLog.ts`) and the mask cache (`lib/http/mask.ts`). `clearSession()` wipes both explicitly. Any other app-wide instance lives in `app/` and registers with `onClearSession()`.
+Module-level state in `lib/` is limited to `requestLogStore` (`lib/http/requestLog.ts`), the mask cache (`lib/http/mask.ts`) and the network guard's `graphAllowed` flag (`lib/http/networkGuard.ts`), a policy that holds no session data. The guard exists before the app, and the session store keeps the flag in sync with the mode; it starts as false. `clearSession()` wipes the first two explicitly. Any other app-wide instance lives in `app/` and registers with `onClearSession()`.
 
 Guidelines from `TECH_DEBT_PLAN_M1.md`:
 - **Policy parser** (built): extractors read the typed tree in `xmlTree.ts`, never fast-xml-parser's raw arrays. Element handling lives only in the `ELEMENTS` table in `elements.ts`. `<base />` composition goes through `composeSection()` for every section.
