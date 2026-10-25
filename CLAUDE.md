@@ -6,7 +6,7 @@ A client-side SPA that maps **Azure API Management (APIM) policies** to **Micros
 
 - Which operations the API has, and which policies protect them
 - Which service principals (apps / managed identities) are allowed to call each operation
-- Who those service principals are (display name, appId, owners, type)
+- Who those service principals are (display name, appId, type)
 - If access is granted through a group, who is in that group (direct members only — nested groups are not expanded)
 - Which backend each operation routes to: backend type and URL, and how APIM authenticates to it (including APIM's own managed identity and what it has access to). Backends are identified by URL only; the Azure resource behind a backend is not looked up
 

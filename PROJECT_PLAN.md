@@ -94,7 +94,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - `appRoles`, `appRoleAssignedTo` (inbound) and the user-assigned identity's `appRoleAssignments` (outbound)
   - groups and their *direct* members, with group-type members filtered out
   - a `$batch` helper that chunks requests into groups of 20 (`batchGet`, `getServicePrincipalsByIds`), with a ResourceResult per lookup
-  - **Open:** service principal owners (`/servicePrincipals/{id}/owners`), needed for "who those service principals are" (CLAUDE.md › Project overview). Not in this list originally; add with a query key.
+  - Service principal owners are out of scope and not fetched.
 - Each call gets a TanStack Query hook with stable keys (`['arm', sub, svc, 'apis']`, `['graph','sp',appId]`, …). **Done.**
 - Errors are kept per resource; nothing fails globally.
 
