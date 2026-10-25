@@ -1,5 +1,5 @@
 import { FINDING_INFO, type FindingKind } from '@/domain'
-import { operationsText } from '../operations'
+import { operationLookup } from '../operations'
 import type { ScriptDefinition } from '../types'
 
 /** Where calls go unprotected: plain HTTP, no credentials, or an identity with no role there. */
@@ -20,6 +20,7 @@ export const backendIssuesScript: ScriptDefinition = {
     'Backends reached over plain HTTP or without credentials, and managed identities with no role on the target.',
   params: [],
   run(model) {
+    const lookup = operationLookup(model)
     const backendOf = new Map(
       model.operations.flatMap(({ operation, backend }) =>
         backend ? [[operation.id, backend.backendKey] as const] : [],
@@ -46,7 +47,7 @@ export const backendIssuesScript: ScriptDefinition = {
         url: backend?.url,
         severity: FINDING_INFO[kind].severity,
         issue: FINDING_INFO[kind].title,
-        operations: operationsText(model, operations),
+        operations: lookup.list(operations),
       }
     })
     return {

@@ -1,8 +1,16 @@
-import { PRINCIPAL_KIND_LABEL, principalLabel, principalReach, reachedOperationIds } from '@/domain'
-import { operationsText } from '../operations'
+import { callersByOperation, PRINCIPAL_KIND_LABEL, principalLabel } from '@/domain'
+import { appendTo } from '@/lib/collections'
+import { operationLookup } from '../operations'
 import type { ScriptDefinition } from '../types'
 
-/** Principals that can call many operations: candidates for narrower roles. */
+/** Operations named per row; a principal reaching hundreds gets the rest counted. */
+const NAMED_OPERATIONS = 10
+
+/**
+ * Principals that can call many operations: candidates for narrower roles. Read from
+ * `callersByOperation()` turned around, rather than from `principalReach()`, which builds a path
+ * per group member per operation and is slow on a large tenant.
+ */
 export const broadAccessScript: ScriptDefinition = {
   id: 'broad-access',
   title: 'Principals with access to more than N operations',
@@ -11,27 +19,29 @@ export const broadAccessScript: ScriptDefinition = {
   params: [{ key: 'n', label: 'More than N operations', default: 1, min: 0 }],
   run(model, params) {
     const n = params.n ?? 1
-    const rows = principalReach(model).flatMap((entry) => {
-      const { principal, paths } = entry
-      if (principal.kind === 'group') return []
-      const operations = reachedOperationIds(entry)
-      if (operations.size <= n) return []
-      const groups = new Set(
-        paths.flatMap((path) => (path.kind === 'group' && path.effective ? [path.groupId] : [])),
-      )
+    const lookup = operationLookup(model)
+    const reached = new Map<string, string[]>()
+    for (const [operationId, callers] of callersByOperation(model)) {
+      for (const id of callers) appendTo(reached, id, operationId)
+    }
+    const groups = new Map<string, string[]>()
+    for (const edge of model.edges) {
+      if (edge.kind === 'membership' && edge.effective) {
+        const group = model.principals.get(edge.groupId)
+        appendTo(groups, edge.memberId, group ? principalLabel(group) : edge.groupId)
+      }
+    }
+    const rows = [...reached].flatMap(([id, operations]) => {
+      const principal = model.principals.get(id)
+      if (!principal || operations.length <= n) return []
       return [
         {
           name: principalLabel(principal),
           type: PRINCIPAL_KIND_LABEL[principal.kind],
-          id: principal.id,
-          operations: operations.size,
-          through: [...groups]
-            .map((id) => {
-              const group = model.principals.get(id)
-              return group ? principalLabel(group) : id
-            })
-            .join(', '),
-          reaches: operationsText(model, operations),
+          id,
+          operations: operations.length,
+          through: (groups.get(id) ?? []).join(', '),
+          reaches: lookup.list(operations, NAMED_OPERATIONS),
         },
       ]
     })
@@ -44,7 +54,7 @@ export const broadAccessScript: ScriptDefinition = {
         { key: 'reaches', title: 'Reaches' },
         { key: 'id', title: 'Object ID' },
       ],
-      rows: rows.sort((a, b) => b.operations - a.operations),
+      rows: rows.sort((a, b) => b.operations - a.operations || a.name.localeCompare(b.name)),
     }
   },
 }

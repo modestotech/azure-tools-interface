@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import { Suspense, useMemo } from 'react'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { AccessModel } from '@/domain'
 import { scripts } from '@/scripts/registry'
@@ -10,6 +10,15 @@ import { uiStore } from './uiStore'
 
 /** The landing page: what the analysis found so far, and the views and scripts to open. */
 export function Landing({ model }: { model: AccessModel | undefined }) {
+  // Each script is pure, but on a large tenant one run can take a while: once per model.
+  const found = useMemo(
+    () =>
+      model &&
+      new Map(
+        scripts.map((script) => [script.id, script.run(model, defaultParams(script)).rows.length]),
+      ),
+    [model],
+  )
   return (
     <div className="space-y-4">
       <AnalysisStatus />
@@ -62,9 +71,9 @@ export function Landing({ model }: { model: AccessModel | undefined }) {
                       {script.description}
                     </span>
                   </span>
-                  {model && (
+                  {found && (
                     <span className="text-muted-foreground shrink-0 text-xs">
-                      {script.run(model, defaultParams(script)).rows.length} found
+                      {found.get(script.id)} found
                     </span>
                   )}
                 </button>

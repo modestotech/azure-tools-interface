@@ -1,6 +1,7 @@
 import { buildAccessModel } from '@/domain'
 import { fixtureInputs, ok } from '@/test/fixtures/accessModel'
 import { REPORTING_MI_SP } from '@/test/fixtures/graph'
+import { operationLookup } from './operations'
 import { scripts } from './registry'
 import { backendIssuesScript } from './starter/backendIssues'
 import { broadAccessScript } from './starter/broadAccess'
@@ -126,5 +127,15 @@ describe('unresolvedRulesScript', () => {
         xml: expect.stringContaining('<choose>') as unknown,
       }),
     ])
+  })
+})
+
+describe('operationLookup', () => {
+  it('names up to max operations and counts the rest', () => {
+    const lookup = operationLookup(complete())
+    expect(lookup.list(['list-orders', 'create-order', 'list-orders'])).toBe(
+      'GET /orders, POST /orders',
+    )
+    expect(lookup.list(['list-orders', 'create-order', 'gone'], 1)).toBe('GET /orders and 2 more')
   })
 })

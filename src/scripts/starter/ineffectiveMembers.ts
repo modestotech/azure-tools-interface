@@ -1,5 +1,5 @@
 import { PRINCIPAL_KIND_LABEL, principalLabel } from '@/domain'
-import { operationsText } from '../operations'
+import { operationLookup } from '../operations'
 import type { ScriptDefinition } from '../types'
 
 /**
@@ -13,6 +13,7 @@ export const ineffectiveMembersScript: ScriptDefinition = {
     "Apps and managed identities in a role-holding group. Group roles don't reach them, so they can't call through it.",
   params: [],
   run(model) {
+    const operations = operationLookup(model)
     const rows = model.findings.flatMap((finding) => {
       if (finding.kind !== 'ineffective-member') return []
       const group = model.principals.get(finding.groupId)
@@ -26,7 +27,7 @@ export const ineffectiveMembersScript: ScriptDefinition = {
           member: member ? principalLabel(member) : finding.memberId,
           memberType: member ? PRINCIPAL_KIND_LABEL[member.kind] : undefined,
           memberId: finding.memberId,
-          groupGrants: operationsText(model, granted),
+          groupGrants: operations.list(granted),
         },
       ]
     })
