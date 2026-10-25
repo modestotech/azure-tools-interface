@@ -1,6 +1,6 @@
-import { FINDING_INFO } from '@/domain'
-import { authText, backendText, outboundText, type OperationRow } from './rows'
-import { SeverityBadge } from './SeverityBadge'
+import { FindingList } from '../shared/FindingList'
+import { authText, outboundText } from '../shared/summaries'
+import { backendText, type OperationRow } from './rows'
 
 /** The selected operation: everything in its row, plus each finding and the XML to review. */
 export function OperationDetails({ row }: { row: OperationRow }) {
@@ -31,19 +31,7 @@ export function OperationDetails({ row }: { row: OperationRow }) {
         <dt className="text-muted-foreground">Outbound auth</dt>
         <dd className="break-all">{outboundText(row.outbound)}</dd>
       </dl>
-      {row.findings.length > 0 && (
-        <ul className="space-y-1">
-          {row.findings.map((finding, index) => {
-            const info = FINDING_INFO[finding.kind]
-            return (
-              <li key={index} className="flex items-start gap-2">
-                <SeverityBadge severity={info.severity}>{info.severity}</SeverityBadge>
-                <span>{info.title}</span>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+      <FindingList findings={row.findings} />
       {unresolved.map((rule, index) => (
         <div key={index} className="space-y-1">
           <p>

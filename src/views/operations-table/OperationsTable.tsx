@@ -20,15 +20,9 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { ViewProps } from '../types'
 import { OperationDetails } from './OperationDetails'
-import {
-  authText,
-  backendText,
-  exportRow,
-  operationRows,
-  outboundText,
-  type OperationRow,
-} from './rows'
-import { SeverityBadge } from './SeverityBadge'
+import { authText, outboundText } from '../shared/summaries'
+import { backendText, exportRow, operationRows, type OperationRow } from './rows'
+import { SeverityBadge } from '@/components/SeverityBadge'
 
 const features = tableFeatures({
   columnFilteringFeature,
