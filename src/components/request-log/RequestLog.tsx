@@ -8,7 +8,7 @@ import {
   type RequestState,
 } from '@/lib/http'
 import { cn } from '@/lib/utils'
-import { downloadJson } from './download'
+import { downloadJson } from '../download'
 import { filterEntries, policyProgress, type LogFilter, type Progress } from './filter'
 import { formatLine } from './format'
 

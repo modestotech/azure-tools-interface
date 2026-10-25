@@ -150,7 +150,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - The "reveal IDs" toggle and the filters live in `uiStore`, so "Clear session" resets them.
 
 **M6 — Views (`views/registry.ts`)**
-- `operations-table`: TanStack Table (virtualized) showing:
+- `operations-table` (**done**): TanStack Table (virtualized) with a text filter, sortable columns and a details panel for the selected operation (findings, XML to review), showing:
   - auth summary, source scope, backend and outbound auth
   - "needs manual review" badges
   - CSV/JSON export
