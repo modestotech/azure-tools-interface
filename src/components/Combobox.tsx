@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { matchesSearch } from './searchMatch'
 
 export interface ComboboxOption {
   readonly value: string
@@ -64,8 +65,13 @@ export function Combobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
-        <Command>
-          {options.length > 7 && <CommandInput placeholder="Search…" />}
+        {/* Contains-or-wildcard matching, not cmdk's fuzzy default (see searchMatch.ts). */}
+        <Command
+          filter={(value, search, keywords) =>
+            matchesSearch([value, ...(keywords ?? [])].join(' '), search) ? 1 : 0
+          }
+        >
+          {options.length > 7 && <CommandInput placeholder="Search… (* matches anything)" />}
           <CommandList>
             <CommandEmpty>No match.</CommandEmpty>
             <CommandGroup>
