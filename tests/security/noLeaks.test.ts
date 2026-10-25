@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest'
 
 const SRC = path.resolve(import.meta.dirname, '../../src')
 const HTTP_CLIENT = 'lib/http/client.ts'
+/** Wraps XMLHttpRequest and sendBeacon to refuse writes; it names them, it doesn't use them. */
+const NETWORK_GUARD = 'lib/http/networkGuard.ts'
 
 interface Rule {
   readonly pattern: RegExp
@@ -24,10 +26,18 @@ const RULES: readonly Rule[] = [
     reason: 'network call outside the HTTP client',
     allowedIn: [HTTP_CLIENT],
   },
-  { pattern: /\bXMLHttpRequest\b/, reason: 'network call outside the HTTP client' },
+  {
+    pattern: /\bXMLHttpRequest\b/,
+    reason: 'network call outside the HTTP client',
+    allowedIn: [NETWORK_GUARD],
+  },
   { pattern: /\bWebSocket\b/, reason: 'network call outside the HTTP client' },
   { pattern: /\bEventSource\b/, reason: 'network call outside the HTTP client' },
-  { pattern: /\bsendBeacon\b/, reason: 'network call outside the HTTP client' },
+  {
+    pattern: /\bsendBeacon\b/,
+    reason: 'network call outside the HTTP client',
+    allowedIn: [NETWORK_GUARD],
+  },
   { pattern: /\bnavigator\.serviceWorker\b/, reason: 'service worker registration' },
   { pattern: /\blocalStorage\b/, reason: 'browser storage' },
   { pattern: /\bsessionStorage\b/, reason: 'browser storage' },

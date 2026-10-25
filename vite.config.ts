@@ -80,6 +80,12 @@ export default defineConfig({
           // keeps the app's own chunk under Vite's 500 kB warning. The heavy view libraries get
           // their own files too, loaded only by the views that use them.
           groups: [
+            // The read-only network guard (src/readOnlyGuard.ts) and what it imports, in a chunk of
+            // their own: the entry imports it first, so it runs before React or any other code.
+            {
+              name: 'read-only-guard',
+              test: /[\\/]src[\\/](readOnlyGuard|lib[\\/]http[\\/]networkGuard|lib[\\/]token[\\/](resources|ids))\.ts$/,
+            },
             { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
             { name: 'elkjs', test: /[\\/]node_modules[\\/]elkjs[\\/]/ },
             {

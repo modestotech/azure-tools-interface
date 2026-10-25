@@ -1,4 +1,5 @@
 import { clearSession } from '@/app/session/clearSession'
+import { installNetworkGuard } from '@/lib/http/networkGuard'
 import { server } from './msw/server'
 
 /** Runs for every test file, in both the node and the jsdom project. */
@@ -6,6 +7,9 @@ import { server } from './msw/server'
 beforeAll(() => {
   // Any request without a handler fails the test, so nothing can reach real Azure.
   server.listen({ onUnhandledRequest: 'error' })
+  // On top of MSW's fetch, as on top of the browser's in the app: every test runs with the
+  // read-only network guard, so a write sent through fetch fails whichever test sends it.
+  installNetworkGuard()
 })
 afterEach(() => {
   server.resetHandlers()

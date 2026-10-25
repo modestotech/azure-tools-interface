@@ -9,6 +9,8 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- First: wraps fetch and XHR so only reads can leave the browser (src/readOnlyGuard.ts). -->
+    <script type="module" src="/src/readOnlyGuard.ts"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

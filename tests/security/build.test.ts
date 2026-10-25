@@ -100,7 +100,38 @@ afterAll(() => {
   rmSync(outDir, { recursive: true, force: true })
 })
 
+/** The static imports of a built ES module, in order. */
+function staticImports(code: string): string[] {
+  return [...code.matchAll(/\bimport\s*(?:[^'"`]*?\bfrom\s*)?["']([^"']+)["']/g)].map((m) => m[1])
+}
+
 describe('production build', () => {
+  it('runs the read-only network guard before any other code', () => {
+    const html = readFileSync(path.join(outDir, 'index.html'), 'utf8')
+    const entries = [...html.matchAll(/<script type="module"[^>]*\bsrc="\/([^"]+)"/g)].map(
+      (m) => m[1],
+    )
+    expect(entries).toHaveLength(1)
+    const entry = readFileSync(path.join(outDir, entries[0] ?? ''), 'utf8')
+    // The bundler's runtime helpers have no side effects; the guard must be the first real import.
+    const imports = staticImports(entry).filter((file) => !file.includes('rolldown-runtime'))
+    expect(imports[0]).toMatch(/^\.\/read-only-guard-[\w-]+\.js$/)
+    const guard = readFileSync(path.join(outDir, 'assets', imports[0]?.slice(2) ?? ''), 'utf8')
+    expect(staticImports(guard)).toEqual([])
+    expect(guard).toContain('this app only sends reads')
+  })
+
+  it('ships no write methods', () => {
+    for (const file of builtFiles(outDir).filter((name) => name.endsWith('.js'))) {
+      const text = readFileSync(path.join(outDir, file), 'utf8')
+      expect(text.match(/["'`](PUT|PATCH|DELETE)["'`]/g), file).toBeNull()
+      // fetch accepts lowercase methods too. elkjs has a `delete` notification type (EMF) and
+      // makes no requests at all.
+      const lowercase = text.match(/["'`](put|patch|delete)["'`]/g) ?? []
+      if (!/(^|\/)elkjs-[\w-]+\.js$/.test(file)) expect(lowercase, file).toEqual([])
+    }
+  })
+
   it('does not ship the MSW service worker', () => {
     const files = builtFiles(outDir)
     expect(files).toContain('index.html')
