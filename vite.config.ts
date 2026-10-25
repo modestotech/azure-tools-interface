@@ -61,7 +61,13 @@ const DOM_TESTS = ['src/**/*.test.tsx', 'src/app/**/*.test.ts']
 export default defineConfig({
   plugins: [react(), tailwindcss(), dropMockServiceWorker(), securityHeaders()],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Unused by the app and not browser-safe: see the stub.
+      'detailed-xml-validator': fileURLToPath(
+        new URL('./stubs/detailed-xml-validator.js', import.meta.url),
+      ),
+    },
   },
   build: {
     rolldownOptions: {
@@ -79,6 +85,8 @@ export default defineConfig({
   test: {
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // Bundled by Vite in tests too, so the alias above applies there as it does in the browser.
+    server: { deps: { inline: ['fast-xml-validator'] } },
     // Creating a jsdom environment is the slowest part of a test file, and most tests (lib,
     // services, domain, security) don't need a DOM. Only React and browser-API tests get jsdom.
     projects: [
