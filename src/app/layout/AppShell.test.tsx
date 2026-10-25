@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { requestLogStore } from '@/lib/http'
 import { TEST_SUB } from '@/test/helpers/fakeJwt'
+import { stubElementSize } from '@/test/helpers/layout'
 import { AppProviders } from '../AppProviders'
 import { sessionStore } from '../session/sessionStore'
 import { AppShell } from './AppShell'
@@ -29,6 +30,7 @@ describe('AppShell', () => {
   })
 
   it('docks the request log with masked lines and counters, and folds it', async () => {
+    stubElementSize()
     sessionStore.getState().setSubscriptionId(TEST_SUB)
     const log = requestLogStore.getState()
     const id = log.start({

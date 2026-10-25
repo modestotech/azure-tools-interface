@@ -140,13 +140,14 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   3. **API**: dropdown of that instance's APIs, required. No "all APIs" option; analysis starts only once an API is chosen. Changing the API discards the previous analysis.
 - Layout (**done**): nav and landing page generated from the registries (empty until M6/M7); the request log is docked as a collapsible bottom panel with masked lines and counters, which M5 turns into the Matrix log.
 
-**M5 — Matrix request log (`components/request-log/`)**
+**M5 — Matrix request log (`components/request-log/`)** (done)
 - Monospace green-on-black stream that auto-scrolls; you can pause it by scrolling up. Virtualized (`@tanstack/react-virtual`).
 - Line format: `GET 200 143ms 4.2kB arm …/service/{svc}/apis`. Pending lines flicker; errors render red, and 404-as-empty renders dim.
 - Header counters: in flight / done / errors / retries; progress bar for policy fetches.
 - Filters by source (ARM/Graph) and status.
 - Exports the log as JSON with masked URLs. Respects `prefers-reduced-motion`.
-- The export already leaves out Azure's error text (`errorKind` + `status` only, see M1); the full masked message stays on screen.
+- The export already leaves out Azure's error text (`errorKind` + `status` only, see M1); the full masked message stays on screen, in the line's tooltip, and the line itself ends with `✗ {errorKind}`.
+- The "reveal IDs" toggle and the filters live in `uiStore`, so "Clear session" resets them.
 
 **M6 — Views (`views/registry.ts`)**
 - `operations-table`: TanStack Table (virtualized) showing:

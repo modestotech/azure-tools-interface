@@ -71,6 +71,7 @@ Required permissions for the signed-in user: `Reader` (or `API Management Servic
 - **React Flow (@xyflow/react)** + **elkjs** for the access graph (see `AccessEdge` below)
 - **Apache ECharts** (via `echarts-for-react`) for charts/summaries
 - **TanStack Table** for tabular views and exports (CSV/JSON)
+- **TanStack Virtual** (`@tanstack/react-virtual`) for long lists: the request log, and later large tables
 - **Tailwind CSS** + **shadcn/ui** for UI components
 - **fast-xml-parser** for APIM policy XML, with **fast-xml-validator** to reject malformed XML (fast-xml-parser's own validator is deprecated)
 - **Zod** for validating API responses at the boundary
@@ -149,6 +150,7 @@ src/
     backends/
   scripts/             # read-only analyses, registered in scripts/registry.ts
   components/          # shared UI
+    request-log/       #   the Matrix log: presentational, fed by LogDock (app/layout) from requestLogStore + uiStore
   test/                # fixtures (sample policy XML, ARM/Graph JSON) and MSW handlers
 tests/
   security/            # Node-side guards: source scan for network/storage use, production-build checks
@@ -270,7 +272,7 @@ Core types live in `domain/model.ts`. Keep them stable — views and scripts dep
 - Unit-test the policy parser and mapper heavily using real-world-shaped XML fixtures in `src/test/fixtures/`. No live Azure calls in tests.
 - `tests/security/` must stay green: `noLeaks.test.ts` fails on network calls outside `lib/http/client.ts` and on any browser persistence; `build.test.ts` builds the production site and fails on a shipped service worker, external resources in `index.html`, or a URL origin not on its allowlist. Add an origin to `ALLOWED_ORIGINS` only with a reason, and never weaken these tests to make a change pass.
 - `public/mockServiceWorker.js` is for `pnpm dev:demo` only; a Vite plugin removes it from every other build.
-- Tests run in two Vitest projects: `dom` (jsdom) for `.tsx` tests and `src/app/`, `node` for everything else. Put new tests that need browser APIs under `src/app/` or in a `.tsx` file.
+- Tests run in two Vitest projects: `dom` (jsdom) for `.tsx` tests and `src/app/`, `node` for everything else. Put new tests that need browser APIs under `src/app/` or in a `.tsx` file. jsdom lays nothing out, so a test that renders a virtualized list calls `stubElementSize()` (`test/helpers/layout.ts`).
 - `src/test/setup.ts` calls `clearSession()` after every test. In tests, use `ARM` / `GRAPH` from `test/msw/handlers.ts` and `APIM_API_VERSION` instead of literal URLs and versions. Test helpers (e.g. `fakeJwt.ts`) take audiences from `API_RESOURCES[api].resource`. The exceptions are tests that check those constants or the origin allowlist themselves (`checks.test.ts`, `odata.test.ts`, `tests/security/`).
 - Never commit real tokens, tenant IDs, subscription IDs, policy XML or exports from a real tenant. Fixtures must be anonymized.
 

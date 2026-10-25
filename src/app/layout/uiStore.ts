@@ -1,17 +1,28 @@
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
+import { ALL_LINES, type LogFilter } from '@/components/request-log/filter'
 
-/** Layout state: which view is open and whether the request log is expanded. In memory only. */
+/** Layout state: which view is open and how the request log is shown. In memory only. */
 export interface UiState {
   /** A view ID from `views/registry.ts`; undefined shows the landing page. */
   readonly activeViewId: string | undefined
   readonly logOpen: boolean
+  /** The log shows unmasked URLs. Reset by "Clear session", like the rest of this store. */
+  readonly logRevealed: boolean
+  readonly logFilter: LogFilter
   openView(id: string | undefined): void
   setLogOpen(open: boolean): void
+  setLogRevealed(revealed: boolean): void
+  setLogFilter(filter: LogFilter): void
   reset(): void
 }
 
-const INITIAL = { activeViewId: undefined, logOpen: true }
+const INITIAL = {
+  activeViewId: undefined,
+  logOpen: true,
+  logRevealed: false,
+  logFilter: ALL_LINES,
+}
 
 export const uiStore = createStore<UiState>()((set) => ({
   ...INITIAL,
@@ -20,6 +31,12 @@ export const uiStore = createStore<UiState>()((set) => ({
   },
   setLogOpen(logOpen) {
     set({ logOpen })
+  },
+  setLogRevealed(logRevealed) {
+    set({ logRevealed })
+  },
+  setLogFilter(logFilter) {
+    set({ logFilter })
   },
   reset() {
     set(INITIAL)
