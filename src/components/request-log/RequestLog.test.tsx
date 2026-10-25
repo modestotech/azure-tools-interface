@@ -32,6 +32,7 @@ function renderLog(props: Partial<RequestLogProps> = {}) {
     onOpenChange: vi.fn<(open: boolean) => void>(),
     onRevealedChange: vi.fn<(revealed: boolean) => void>(),
     onFilterChange: vi.fn<(filter: LogFilter) => void>(),
+    onHide: vi.fn<() => void>(),
   }
   render(
     <RequestLog
@@ -117,6 +118,12 @@ describe('RequestLog', () => {
     expect(text).not.toContain(TEST_SUB)
     expect(text).not.toContain('Azure said no')
     expect(text).toContain('"errorKind": "forbidden"')
+  })
+
+  it('asks to be hidden', async () => {
+    const { user, onHide } = renderLog({ open: false })
+    await user.click(screen.getByRole('button', { name: 'Hide the request log' }))
+    expect(onHide).toHaveBeenCalledOnce()
   })
 
   it('folds to the header', async () => {

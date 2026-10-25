@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronDown, ChevronUp, Download, Eye, EyeOff } from 'lucide-react'
+import { ChevronDown, ChevronUp, Download, Eye, EyeOff, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   exportableEntries,
@@ -32,6 +32,8 @@ export interface RequestLogProps {
   readonly onRevealedChange: (revealed: boolean) => void
   readonly filter: LogFilter
   readonly onFilterChange: (filter: LogFilter) => void
+  /** Removes the log from the page; the caller offers a way to bring it back. */
+  readonly onHide: () => void
 }
 
 /**
@@ -39,7 +41,7 @@ export interface RequestLogProps {
  * analysis loads. It follows new lines until you scroll up, and follows again from the bottom.
  */
 export function RequestLog(props: RequestLogProps) {
-  const { entries, counters, open, onOpenChange } = props
+  const { entries, counters, open, onOpenChange, onHide } = props
   const progress = useMemo(() => policyProgress(entries), [entries])
   return (
     <section
@@ -63,6 +65,15 @@ export function RequestLog(props: RequestLogProps) {
         </button>
         {progress && progress.done < progress.total && <PolicyProgress progress={progress} />}
         {open && <Controls {...props} />}
+        <button
+          type="button"
+          aria-label="Hide the request log"
+          title="Hide the request log"
+          className={cn('hover:text-log-background hover:bg-log-foreground', !open && 'ml-auto')}
+          onClick={onHide}
+        >
+          <X className="size-4" />
+        </button>
       </div>
       {open && <Lines {...props} />}
     </section>

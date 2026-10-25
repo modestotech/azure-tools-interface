@@ -148,6 +148,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - Exports the log as JSON with masked URLs. Respects `prefers-reduced-motion`.
 - The export already leaves out Azure's error text (`errorKind` + `status` only, see M1); the full masked message stays on screen, in the line's tooltip, and the line itself ends with `✗ {errorKind}`.
 - The "reveal IDs" toggle and the filters live in `uiStore`, so "Clear session" resets them.
+- An × in the header hides the log entirely; a small "show request log" button (with the in-flight count) brings it back.
 
 **M6 — Views (`views/registry.ts`)**
 - `operations-table` (**done**): TanStack Table (virtualized) with a text filter, sortable columns and a details panel for the selected operation (findings, XML to review), showing:

@@ -52,6 +52,14 @@ describe('AppShell', () => {
     expect(uiStore.getState().logOpen).toBe(false)
     expect(dock).not.toHaveTextContent('GET 200')
   })
+
+  it('hides the request log and brings it back', async () => {
+    const user = renderShell()
+    await user.click(screen.getByRole('button', { name: 'Hide the request log' }))
+    expect(screen.queryByRole('region', { name: 'Request log' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /show request log/ }))
+    expect(screen.getByRole('region', { name: 'Request log' })).toBeInTheDocument()
+  })
 })
 
 describe('DemoBanner', () => {
