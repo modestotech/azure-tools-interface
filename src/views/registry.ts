@@ -1,4 +1,5 @@
 import { accessGraphView } from './access-graph'
+import { backendsView } from './backends'
 import { operationsTableView } from './operations-table'
 import { principalExplorerView } from './principal-explorer'
 import type { ViewDefinition } from './types'
@@ -8,4 +9,5 @@ export const views: readonly ViewDefinition[] = [
   operationsTableView,
   accessGraphView,
   principalExplorerView,
+  backendsView,
 ]
