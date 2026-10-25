@@ -184,6 +184,12 @@ export function resolveInbound(context: MapperContext, policy: OperationPolicy):
     context.collector.findings.push({ kind: 'no-auth', operationId })
     return
   }
+  if (!context.inputs.entra) {
+    // ARM only: what the policy requires is known, who meets it isn't. With no target service
+    // principals, reportClaims raises only the findings the policy alone shows.
+    for (const rule of rules) reportClaims(context, operationId, rule, [])
+    return
+  }
   // A caller must pass every validate-jwt; rules without a roles claim add no constraint.
   let callers: Map<string, { holder: Holder; roles: string[] }> | undefined
   let complete = true

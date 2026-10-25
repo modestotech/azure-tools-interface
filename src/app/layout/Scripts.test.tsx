@@ -53,3 +53,26 @@ describe('Scripts', () => {
     )
   })
 })
+
+describe('Scripts in ARM-only mode', () => {
+  const renderArmOnly = () => {
+    stubElementSize(1200, 600)
+    render(<Scripts model={buildAccessModel({ ...fixtureInputs(), entra: false })} />)
+  }
+
+  it('does not run a script that needs Entra, and says why', () => {
+    uiStore.getState().openScript('broad-access')
+    renderArmOnly()
+    const region = screen.getByRole('region', { name: /more than N operations/ })
+    expect(within(region).getByRole('note')).toHaveTextContent(/reads principals and groups/)
+    expect(within(region).queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('runs the scripts that ARM data answers', () => {
+    uiStore.getState().openScript('no-auth')
+    renderArmOnly()
+    expect(screen.getByRole('region', { name: 'Operations with no auth' })).toHaveTextContent(
+      'Nothing found.',
+    )
+  })
+})

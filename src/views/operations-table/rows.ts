@@ -7,6 +7,7 @@ import {
   operationFindings,
   outboundText,
   worstSeverity,
+  NEEDS_ENTRA,
   type AuthSummary,
 } from '../shared/summaries'
 
@@ -21,8 +22,13 @@ export interface OperationRow {
   readonly path: string
   readonly name: string
   readonly auth: AuthSummary
-  /** Principals that can call: role holders other than groups, plus users in granting groups. */
-  readonly callers: number
+  /**
+   * Principals that can call: role holders other than groups, plus users in granting groups.
+   * Undefined in ARM-only mode, where who holds the roles isn't known.
+   */
+  readonly callers: number | undefined
+  /** Whether Entra data was used (false in ARM-only mode). */
+  readonly entra: boolean
   readonly backend: Backend | undefined
   /** Where the backend was chosen: a policy scope, or `serviceUrl` when no policy sets one. */
   readonly backendSource: PolicyScope | 'serviceUrl' | undefined
@@ -45,7 +51,8 @@ export function operationRows(model: AccessModel): OperationRow[] {
       path: operation.urlTemplate,
       name: operation.displayName,
       auth: authSummary(access),
-      callers: callers.get(operation.id)?.size ?? 0,
+      callers: model.entra ? (callers.get(operation.id)?.size ?? 0) : undefined,
+      entra: model.entra,
       backend: backend && model.backends.get(backend.backendKey),
       backendSource: backend && (backend.source?.scope ?? 'serviceUrl'),
       outbound,
@@ -68,10 +75,10 @@ export function exportRow(row: OperationRow): Record<string, string | number> {
     name: row.name,
     auth: authText(row.auth),
     authScope: row.auth.kind === 'jwt' ? row.auth.scopes.join(', ') : '',
-    callers: row.callers,
+    callers: row.callers ?? NEEDS_ENTRA,
     backend: backendText(row),
     backendSource: row.backendSource ?? '',
-    outboundAuth: outboundText(row.outbound),
+    outboundAuth: outboundText(row.outbound, row.entra),
     needsReview: row.needsReview,
     findings: row.findings.map(findingText).join('; '),
   }

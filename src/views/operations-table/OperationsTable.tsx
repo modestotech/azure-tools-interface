@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { ViewProps } from '../types'
 import { OperationDetails } from './OperationDetails'
-import { authText, outboundText } from '../shared/summaries'
+import { authText, NEEDS_ENTRA, outboundText } from '../shared/summaries'
 import { backendText, exportRow, operationRows, type OperationRow } from './rows'
 import { SeverityBadge } from '@/components/SeverityBadge'
 
@@ -65,7 +65,14 @@ const columns = column.columns([
       </span>
     ),
   }),
-  column.accessor('callers', { header: 'Callers', sortFn: 'basic' }),
+  // Unknown (ARM-only mode) sorts below zero.
+  column.accessor((row) => row.callers ?? -1, {
+    id: 'callers',
+    header: 'Callers',
+    sortFn: 'basic',
+    cell: (info) =>
+      info.row.original.callers ?? <span className="text-muted-foreground">{NEEDS_ENTRA}</span>,
+  }),
   column.accessor(backendText, {
     id: 'backend',
     header: 'Backend',
@@ -81,7 +88,7 @@ const columns = column.columns([
       </span>
     ),
   }),
-  column.accessor((row) => outboundText(row.outbound), {
+  column.accessor((row) => outboundText(row.outbound, row.entra), {
     id: 'outbound',
     header: 'Outbound auth',
     sortFn: 'alphanumeric',

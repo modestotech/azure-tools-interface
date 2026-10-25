@@ -3,6 +3,7 @@ import { ARM } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
 import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
 import { requestLogStore } from '@/lib/http'
+import { API_RESOURCES } from '@/lib/token'
 import { queryKeys } from '@/services/queryKeys'
 import { clearSession, onClearSession } from './clearSession'
 import { httpClient } from './httpClient'
@@ -127,5 +128,42 @@ describe('session store', () => {
     calls.length = 0
     clearSession()
     expect(calls).toEqual([])
+  })
+})
+
+describe('ARM-only mode', () => {
+  const graphUrl = `${API_RESOURCES.graph.baseUrl}/groups/a`
+
+  it('drops the Graph token, and keeps none while it lasts', () => {
+    const s = sessionStore.getState()
+    s.setToken('graph', graphToken())
+    s.setEntra(false)
+    expect(sessionStore.getState().tokens.graph).toBe('')
+    s.setToken('graph', graphToken())
+    expect(sessionStore.getState().tokens.graph).toBe('')
+    s.setToken('arm', armToken())
+    expect(sessionStore.getState().tokens.arm).not.toBe('')
+  })
+
+  it('makes the network guard refuse Graph, and lets it through again with Entra', async () => {
+    server.use(http.get(graphUrl, () => HttpResponse.json({})))
+    sessionStore.getState().setEntra(false)
+    await expect(fetch(graphUrl)).rejects.toThrow(/ARM-only mode/)
+    sessionStore.getState().setEntra(true)
+    await expect(fetch(graphUrl)).resolves.toBeInstanceOf(Response)
+  })
+
+  it('drops cached Graph results when switching to ARM only', () => {
+    queryClient.setQueryData(queryKeys.graph.all, { status: 'empty' })
+    queryClient.setQueryData(queryKeys.arm.all, { status: 'empty' })
+    sessionStore.getState().setEntra(false)
+    expect(queryClient.getQueryData(queryKeys.graph.all)).toBeUndefined()
+    expect(queryClient.getQueryData(queryKeys.arm.all)).toBeDefined()
+  })
+
+  it('is reset to ARM and Entra by Clear session', () => {
+    sessionStore.getState().setEntra(false)
+    clearSession()
+    expect(sessionStore.getState().entra).toBe(true)
   })
 })

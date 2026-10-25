@@ -17,6 +17,7 @@ export const broadAccessScript: ScriptDefinition = {
   description:
     'Apps, managed identities and users that can call more than N operations of the API.',
   params: [{ key: 'n', label: 'More than N operations', default: 1, min: 0 }],
+  needsEntra: true,
   run(model, params) {
     const n = params.n ?? 1
     const lookup = operationLookup(model)

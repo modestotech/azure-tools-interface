@@ -48,3 +48,11 @@ describe('PrincipalExplorer', () => {
     expect(within(details).getByText(/id-contoso-reporting.*not effective/)).toBeInTheDocument()
   })
 })
+
+describe('PrincipalExplorer in ARM-only mode', () => {
+  it('says principals need Entra instead of listing none', () => {
+    render(<PrincipalExplorer model={buildAccessModel({ ...fixtureInputs(), entra: false })} />)
+    expect(screen.getByRole('note')).toHaveTextContent(/ARM-only mode: principals come from Entra/)
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+})

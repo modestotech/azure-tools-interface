@@ -44,6 +44,7 @@ export const assignments = (raw: readonly unknown[] = []) =>
 /** The complete fictional setup, as the services would return it for `orders-api`. */
 export function fixtureInputs(): AccessModelInputs {
   return {
+    entra: true,
     api: apiSchema.parse(armFixtures.apis[0]),
     service: ok(apimServiceSchema.parse(armFixtures.services[0])),
     operations: ok(

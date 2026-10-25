@@ -26,7 +26,7 @@ function setup() {
 describe('useAccessModel', () => {
   it('loads the whole waterfall for one API and builds the complete model', async () => {
     const { log, wrapper } = setup()
-    const { result } = renderHook(() => useAccessModel(svc, ordersApi), { wrapper })
+    const { result } = renderHook(() => useAccessModel(svc, ordersApi, true), { wrapper })
 
     await waitFor(
       () => {
@@ -58,11 +58,31 @@ describe('useAccessModel', () => {
     const { log, wrapper } = setup()
     const { result } = renderHook(
       ({ service, api }: { service: ApimServiceRef | undefined; api: ArmApi | undefined }) =>
-        useAccessModel(service, api),
+        useAccessModel(service, api, true),
       { wrapper, initialProps: { service: svc, api: undefined } },
     )
     expect(result.current).toBeUndefined()
     // Even the service-level reads (identity, global policy) wait for the API.
     expect(log.getState().entries).toEqual([])
+  })
+})
+
+describe('useAccessModel in ARM-only mode', () => {
+  it('builds the model from ARM alone, without one Graph request', async () => {
+    const { log, wrapper } = setup()
+    const { result } = renderHook(() => useAccessModel(svc, ordersApi, false), { wrapper })
+    await waitFor(
+      () => {
+        expect(result.current?.pending).toEqual([])
+        expect(result.current?.operations.every((access) => access.outbound)).toBe(true)
+      },
+      { timeout: 3000 },
+    )
+    expect(result.current?.entra).toBe(false)
+    expect(result.current?.problems).toEqual([])
+    const entries = log.getState().entries
+    expect(entries.length).toBeGreaterThan(0)
+    expect(entries.filter((entry) => entry.api !== 'arm')).toEqual([])
+    expect(entries.every((entry) => entry.method === 'GET')).toBe(true)
   })
 })

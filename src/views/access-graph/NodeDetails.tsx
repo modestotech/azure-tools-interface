@@ -76,7 +76,7 @@ function OperationDetails({
       <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
         <Field label="Name">{access.operation.displayName}</Field>
         <Field label="Auth">{authText(authSummary(access))}</Field>
-        <Field label="Outbound auth">{outboundText(access.outbound)}</Field>
+        <Field label="Outbound auth">{outboundText(access.outbound, model.entra)}</Field>
       </dl>
       <FindingList findings={findings} />
     </>

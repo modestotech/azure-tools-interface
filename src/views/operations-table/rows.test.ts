@@ -69,3 +69,16 @@ describe('operationRows', () => {
     expect(rows[1]?.severity).toBe('medium')
   })
 })
+
+describe('operationRows in ARM-only mode', () => {
+  it('leaves callers unknown and says the outbound roles need Entra', () => {
+    const rows = operationRows(buildAccessModel({ ...fixtureInputs(), entra: false }))
+    expect(rows[0]).toMatchObject({ callers: undefined, entra: false })
+    expect(rows.map(exportRow)[0]).toMatchObject({
+      callers: 'needs Entra',
+      outboundAuth:
+        'user-assigned identity → api://orders-backend.contoso.example.net (roles need Entra)',
+      auth: 'roles (any): Orders.Read, Orders.Write',
+    })
+  })
+})

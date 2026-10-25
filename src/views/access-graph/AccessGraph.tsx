@@ -10,6 +10,7 @@ import '@xyflow/react/dist/style.css'
 import { useEffect, useMemo, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import type { AccessModel } from '@/domain'
+import { ArmOnlyNote } from '../shared/ArmOnlyNote'
 import type { ViewProps } from '../types'
 import { graphElements, type AccessGraph as Graph } from './elements'
 import { layoutGraph, type Position } from './layout'
@@ -111,6 +112,11 @@ export default function AccessGraph({ model }: ViewProps) {
 
   return (
     <div className="space-y-3">
+      {!model.entra && (
+        <ArmOnlyNote>
+          the graph shows each operation and its backend; who can call needs Entra.
+        </ArmOnlyNote>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Input
           aria-label="Filter operations"

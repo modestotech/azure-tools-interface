@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { AccessModel } from '@/domain'
 import { FindingList } from '../shared/FindingList'
+import { NEEDS_ENTRA } from '../shared/summaries'
 import type { ViewProps } from '../types'
 import { backendRows, type BackendRow, type OutboundUse } from './rows'
 
@@ -43,7 +44,13 @@ function Outbound({ model, use }: { model: AccessModel; use: OutboundUse }) {
       <Field label="Principal ID">{outbound.principalId ?? 'unknown'}</Field>
       <Field label="Token audience">{outbound.resource}</Field>
       <Field label="Roles held there">
-        {roles.length > 0 ? roles.join(', ') : outbound.principalId ? 'none' : 'unknown'}
+        {!model.entra
+          ? NEEDS_ENTRA
+          : roles.length > 0
+            ? roles.join(', ')
+            : outbound.principalId
+              ? 'none'
+              : 'unknown'}
       </Field>
       <Field label="Used by">{operationNames(model, use.operationIds)}</Field>
     </dl>

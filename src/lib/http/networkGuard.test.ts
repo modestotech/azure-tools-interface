@@ -1,5 +1,10 @@
 import { API_RESOURCES } from '@/lib/token/resources'
-import { installNetworkGuard, isReadOnlyRequest, ReadOnlyViolation } from './networkGuard'
+import {
+  installNetworkGuard,
+  isReadOnlyRequest,
+  ReadOnlyViolation,
+  setGraphAllowed,
+} from './networkGuard'
 
 const ARM_URL = `${API_RESOURCES.arm.baseUrl}/subscriptions`
 const BATCH_URL = `${API_RESOURCES.graph.baseUrl}/$batch`
@@ -10,23 +15,23 @@ const get = (url = '/groups/a') => ({ id: '1', method: 'GET', url })
 
 describe('isReadOnlyRequest', () => {
   it('allows a GET without a body, in any case', () => {
-    expect(isReadOnlyRequest('GET', ARM_URL, undefined)).toBe(true)
-    expect(isReadOnlyRequest('get', ARM_URL, null)).toBe(true)
+    expect(isReadOnlyRequest('GET', ARM_URL, undefined, true)).toBe(true)
+    expect(isReadOnlyRequest('get', ARM_URL, null, true)).toBe(true)
   })
 
   it.each(['PUT', 'PATCH', 'DELETE', 'POST', 'HEAD', 'OPTIONS', 'put', 'delete', 'Patch'])(
     'refuses %s',
     (method) => {
-      expect(isReadOnlyRequest(method, ARM_URL, undefined)).toBe(false)
+      expect(isReadOnlyRequest(method, ARM_URL, undefined, true)).toBe(false)
     },
   )
 
   it('refuses a GET with a body', () => {
-    expect(isReadOnlyRequest('GET', ARM_URL, '{}')).toBe(false)
+    expect(isReadOnlyRequest('GET', ARM_URL, '{}', true)).toBe(false)
   })
 
   it('allows a Graph $batch of GETs', () => {
-    expect(isReadOnlyRequest('POST', BATCH_URL, batch([get(), get('/groups/b')]))).toBe(true)
+    expect(isReadOnlyRequest('POST', BATCH_URL, batch([get(), get('/groups/b')]), true)).toBe(true)
   })
 
   it.each([
@@ -42,14 +47,16 @@ describe('isReadOnlyRequest', () => {
     ['a body that is not JSON', 'requests'],
     ['a body that is not a string', { requests: [get()] }],
   ])('refuses a $batch with %s', (_name, body) => {
-    expect(isReadOnlyRequest('POST', BATCH_URL, body)).toBe(false)
+    expect(isReadOnlyRequest('POST', BATCH_URL, body, true)).toBe(false)
   })
 
   it('refuses a $batch POST anywhere but the Graph $batch URL', () => {
     const body = batch([get()])
-    expect(isReadOnlyRequest('POST', `${API_RESOURCES.graph.baseUrl}/groups`, body)).toBe(false)
-    expect(isReadOnlyRequest('POST', `${API_RESOURCES.arm.baseUrl}/$batch`, body)).toBe(false)
-    expect(isReadOnlyRequest('POST', `${BATCH_URL}?x=1`, body)).toBe(false)
+    expect(isReadOnlyRequest('POST', `${API_RESOURCES.graph.baseUrl}/groups`, body, true)).toBe(
+      false,
+    )
+    expect(isReadOnlyRequest('POST', `${API_RESOURCES.arm.baseUrl}/$batch`, body, true)).toBe(false)
+    expect(isReadOnlyRequest('POST', `${BATCH_URL}?x=1`, body, true)).toBe(false)
   })
 })
 
@@ -75,12 +82,39 @@ function fakeTarget() {
   return { target, sent }
 }
 
+describe('isReadOnlyRequest in ARM-only mode', () => {
+  it('refuses anything to Graph, $batch included, and still allows ARM GETs', () => {
+    expect(
+      isReadOnlyRequest('GET', `${API_RESOURCES.graph.baseUrl}/groups/a`, undefined, false),
+    ).toBe(false)
+    expect(isReadOnlyRequest('POST', BATCH_URL, batch([get()]), false)).toBe(false)
+    expect(isReadOnlyRequest('GET', ARM_URL, undefined, false)).toBe(true)
+    expect(isReadOnlyRequest('PUT', ARM_URL, undefined, false)).toBe(false)
+  })
+})
+
 describe('installNetworkGuard', () => {
   beforeEach(() => {
+    setGraphAllowed(true)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
   afterEach(() => {
+    setGraphAllowed(true)
     vi.restoreAllMocks()
+  })
+
+  it('refuses every Graph request in ARM-only mode, through fetch and XHR', async () => {
+    const { target, sent } = fakeTarget()
+    installNetworkGuard(target)
+    setGraphAllowed(false)
+    await expect(target.fetch(`${API_RESOURCES.graph.baseUrl}/groups/a`)).rejects.toThrow(
+      'Blocked a Graph request (ARM-only mode) to https://graph.microsoft.com',
+    )
+    expect(() => {
+      new target.XMLHttpRequest().open('GET', `${API_RESOURCES.graph.baseUrl}/groups/a`)
+    }).toThrow(ReadOnlyViolation)
+    await target.fetch(ARM_URL)
+    expect(sent).toEqual(['fetch GET'])
   })
 
   it('lets reads through to fetch', async () => {

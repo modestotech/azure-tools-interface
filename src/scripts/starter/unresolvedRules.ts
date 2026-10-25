@@ -8,6 +8,7 @@ export const unresolvedRulesScript: ScriptDefinition = {
   description:
     'Policy elements outside the supported pattern (choose, fragments, named values, expressions…), to review by hand.',
   params: [],
+  needsEntra: false,
   run(model) {
     const operations = operationLookup(model)
     const rows = model.findings.flatMap((finding) => {

@@ -1,5 +1,5 @@
 import { FindingList } from '../shared/FindingList'
-import { authText, outboundText } from '../shared/summaries'
+import { authText, NEEDS_ENTRA, outboundText } from '../shared/summaries'
 import { backendText, type OperationRow } from './rows'
 
 /** The selected operation: everything in its row, plus each finding and the XML to review. */
@@ -22,14 +22,14 @@ export function OperationDetails({ row }: { row: OperationRow }) {
         <dt className="text-muted-foreground">Auth</dt>
         <dd>{authText(row.auth)}</dd>
         <dt className="text-muted-foreground">Callers</dt>
-        <dd>{row.callers}</dd>
+        <dd>{row.callers ?? NEEDS_ENTRA}</dd>
         <dt className="text-muted-foreground">Backend</dt>
         <dd className="break-all">
           {backendText(row)}
           {row.backend?.backendId && ` (backend ${row.backend.backendId})`}
         </dd>
         <dt className="text-muted-foreground">Outbound auth</dt>
-        <dd className="break-all">{outboundText(row.outbound)}</dd>
+        <dd className="break-all">{outboundText(row.outbound, row.entra)}</dd>
       </dl>
       <FindingList findings={row.findings} />
       {unresolved.map((rule, index) => (

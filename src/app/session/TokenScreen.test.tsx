@@ -98,3 +98,16 @@ describe('formatRemaining', () => {
     expect(formatRemaining(-180_000)).toBe('expired 3 min ago')
   })
 })
+
+describe('TokenScreen in ARM-only mode', () => {
+  it('asks for the ARM token only', async () => {
+    const { user, field } = setup()
+    expect(field('Graph')).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: /ARM only/ }))
+    expect(sessionStore.getState().entra).toBe(false)
+    expect(screen.queryByLabelText(/^Graph token/)).not.toBeInTheDocument()
+    expect(field('ARM')).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: /ARM and Entra/ }))
+    expect(field('Graph')).toBeInTheDocument()
+  })
+})

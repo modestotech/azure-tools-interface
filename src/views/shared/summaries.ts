@@ -74,13 +74,18 @@ export function authText(auth: AuthSummary): string {
   }
 }
 
-export function outboundText(outbound: OutboundAuth | undefined): string {
+/** `entra` false (ARM-only mode): the roles held there weren't looked up, so it says so. */
+export function outboundText(outbound: OutboundAuth | undefined, entra: boolean): string {
   if (!outbound) return 'loading…'
   if (outbound.mechanism === 'None') return 'none'
   const identity = outbound.clientId ? 'user-assigned identity' : 'system-assigned identity'
+  if (!entra) return `${identity} → ${outbound.resource} (roles need Entra)`
   const roles = outbound.roles.map((role) => role.value ?? role.displayName ?? role.id)
   return `${identity} → ${outbound.resource}${roles.length > 0 ? ` (roles: ${roles.join(', ')})` : ''}`
 }
+
+/** Shown where a value can only come from Entra, in ARM-only mode. */
+export const NEEDS_ENTRA = 'needs Entra'
 
 export function findingText(finding: Finding): string {
   return FINDING_INFO[finding.kind].title

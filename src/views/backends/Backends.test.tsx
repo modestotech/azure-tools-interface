@@ -15,3 +15,12 @@ describe('Backends', () => {
     expect(card.queryByText(/orders-function-key/)).not.toBeInTheDocument()
   })
 })
+
+describe('Backends in ARM-only mode', () => {
+  it('names APIM’s identity from ARM, and says its roles need Entra', () => {
+    render(<Backends model={buildAccessModel({ ...fixtureInputs(), entra: false })} />)
+    const card = within(screen.getByRole('region', { name: 'Backend Orders service' }))
+    expect(card.getByText('id-apim-contoso')).toBeInTheDocument()
+    expect(card.getByText('needs Entra')).toBeInTheDocument()
+  })
+})

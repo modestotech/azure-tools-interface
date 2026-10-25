@@ -28,6 +28,8 @@ import {
 
 const NOT_YET: ModelLookups = { servicePrincipalIds: [], groupIds: [], identityPrincipalIds: [] }
 const NO_RESULTS = new Map<string, undefined>()
+/** Stable, so the Graph hooks given it stay idle without re-rendering. */
+const NONE: readonly string[] = []
 
 /**
  * Loads and builds the access model of one API. Fetching only: the order of the waterfall comes
@@ -41,10 +43,15 @@ const NO_RESULTS = new Map<string, undefined>()
  *
  * Returns undefined until an API is chosen, then a model that fills in as data arrives
  * (`model.pending` lists what's still loading).
+ *
+ * With `entra` false (ARM-only mode), every Graph hook gets an empty input and stays idle: not one
+ * Graph request is made, and the model is built from ARM alone.
  */
 export function useAccessModel(
   svc: ApimServiceRef | undefined,
   api: ArmApi | undefined,
+  /** Required, so no caller falls back to using Entra by forgetting it. */
+  entra: boolean,
 ): AccessModel | undefined {
   const apiId = api?.name
   // Analysis starts only once an API is chosen; even the service-level reads wait for it.
@@ -70,8 +77,8 @@ export function useAccessModel(
     [operationIds, globalPolicy, apiPolicy, operationPolicies],
   )
   const backends = useBackends(svc, lookups.backendIds)
-  const audiences = useServicePrincipalsForAudiences(lookups.audiences)
-  const resources = useServicePrincipalsForAudiences(lookups.resources)
+  const audiences = useServicePrincipalsForAudiences(entra ? lookups.audiences : NONE)
+  const resources = useServicePrincipalsForAudiences(entra ? lookups.resources : NONE)
   const apiServicePrincipalIds = useMemo(() => audienceServicePrincipalIds(audiences), [audiences])
   const appRoleAssignedTo = useAppRoleAssignedTo(apiServicePrincipalIds)
 
@@ -80,6 +87,7 @@ export function useAccessModel(
     () =>
       api &&
       buildAccessModel({
+        entra,
         api,
         service,
         operations,
@@ -95,6 +103,7 @@ export function useAccessModel(
         identityAssignments: NO_RESULTS,
       }),
     [
+      entra,
       api,
       service,
       operations,
@@ -109,15 +118,17 @@ export function useAccessModel(
   )
   const next = useMemo(() => (firstPass ? modelLookups(firstPass) : NOT_YET), [firstPass])
   const principalDetails = useServicePrincipalsByIds(
-    api ? next.servicePrincipalIds : undefined,
+    api && entra ? next.servicePrincipalIds : undefined,
   ).data
-  const groupMembers = useGroupMembers(next.groupIds)
-  const identityAssignments = useAppRoleAssignments(next.identityPrincipalIds)
+  const groupMembers = useGroupMembers(entra ? next.groupIds : NONE)
+  // The identity's principal ID comes from ARM, so this one would run without Entra: gate it too.
+  const identityAssignments = useAppRoleAssignments(entra ? next.identityPrincipalIds : NONE)
 
   return useMemo(
     () =>
       api &&
       buildAccessModel({
+        entra,
         api,
         service,
         operations,
@@ -133,6 +144,7 @@ export function useAccessModel(
         identityAssignments,
       }),
     [
+      entra,
       api,
       service,
       operations,

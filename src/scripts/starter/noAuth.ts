@@ -7,6 +7,7 @@ export const noAuthScript: ScriptDefinition = {
   title: 'Operations with no auth',
   description: 'Operations with no validate-jwt at any scope, or one that requires no role.',
   params: [],
+  needsEntra: false,
   run(model) {
     const operations = operationLookup(model)
     const rows = model.findings.flatMap((finding) => {

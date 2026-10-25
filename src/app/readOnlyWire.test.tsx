@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { GRAPH_BATCH_URL } from '@/lib/http/readOnly'
+import { API_RESOURCES } from '@/lib/token'
 import { armToken, graphToken } from '@/test/helpers/fakeJwt'
 import { server } from '@/test/msw/server'
 import { AppProviders } from './AppProviders'
@@ -89,6 +90,37 @@ describe('requests on the wire', () => {
       const body = JSON.parse(request.body) as { requests: { method: string }[] }
       expect(body.requests.length).toBeGreaterThan(0)
       expect(body.requests.every((sub) => sub.method === 'GET')).toBe(true)
+    }
+  })
+
+  it('are only GETs to ARM in ARM-only mode: no Graph request, no POST', async () => {
+    const { seen, settled } = recordRequests()
+    sessionStore.getState().setEntra(false)
+    sessionStore.getState().setToken('arm', armToken())
+    const user = userEvent.setup()
+    render(
+      <AppProviders>
+        <ScopePicker />
+        <AnalysisStatus />
+      </AppProviders>,
+    )
+    await choose(user, 'Subscription', /^Contoso Integration/)
+    await choose(user, 'APIM instance', /^apim-contoso/)
+    await choose(user, 'API', /^Orders API/)
+    await waitFor(
+      () => {
+        expect(screen.getByText(/ARM only \(callers need Entra\).*· done/)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
+    await settled()
+
+    expect(seen.length).toBeGreaterThan(5)
+    for (const request of seen) {
+      expect(`${request.method} ${new URL(request.url).origin}`, request.url).toBe(
+        `GET ${API_RESOURCES.arm.origin}`,
+      )
+      expect(request.body, request.url).toBe('')
     }
   })
 })

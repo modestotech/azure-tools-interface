@@ -19,6 +19,7 @@ export const backendIssuesScript: ScriptDefinition = {
   description:
     'Backends reached over plain HTTP or without credentials, and managed identities with no role on the target.',
   params: [],
+  needsEntra: false,
   run(model) {
     const lookup = operationLookup(model)
     const backendOf = new Map(

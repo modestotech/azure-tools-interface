@@ -6,6 +6,7 @@ import type { AccessModel } from '@/domain'
 import { cn } from '@/lib/utils'
 import { scripts } from '@/scripts/registry'
 import { defaultParams, type ScriptDefinition, type ScriptParams } from '@/scripts/types'
+import { ArmOnlyNote } from '@/views/shared/ArmOnlyNote'
 import { uiStore, useUi } from './uiStore'
 
 /** A number input per declared param; a cleared or invalid field keeps the last valid value. */
@@ -48,6 +49,23 @@ function ParamFields({
 
 /** The selected script, run on the model as it loads; pure, so it simply re-runs on each change. */
 function ScriptRun({ script, model }: { script: ScriptDefinition; model: AccessModel }) {
+  if (script.needsEntra && !model.entra) {
+    return (
+      <section aria-label={script.title} className="space-y-3">
+        <div>
+          <h2 className="font-medium">{script.title}</h2>
+          <p className="text-muted-foreground text-sm">{script.description}</p>
+        </div>
+        <ArmOnlyNote>
+          this script reads principals and groups from Entra, so it isn't run.
+        </ArmOnlyNote>
+      </section>
+    )
+  }
+  return <ScriptResultView script={script} model={model} />
+}
+
+function ScriptResultView({ script, model }: { script: ScriptDefinition; model: AccessModel }) {
   const [params, setParams] = useState(() => defaultParams(script))
   const result = useMemo(() => script.run(model, params), [script, model, params])
   return (

@@ -221,3 +221,68 @@ describe('effectivePolicies', () => {
     expect([...policies.keys()]).toEqual(['list-orders', 'create-order'])
   })
 })
+
+describe('buildAccessModel: ARM-only mode', () => {
+  const NO_ROLES_API_POLICY = `<policies>
+  <inbound>
+    <validate-jwt header-name="Authorization">
+      <audiences><audience>${AUDIENCE}</audience></audiences>
+    </validate-jwt>
+  </inbound>
+  <backend><base /></backend>
+</policies>`
+
+  /** The fixture's Graph data is all there, so these tests also show it's never read. */
+  const armOnly = (overrides: Partial<AccessModelInputs> = {}) =>
+    buildAccessModel({ ...fixtureInputs(), entra: false, ...overrides })
+
+  it('builds from ARM alone and waits for nothing', () => {
+    const model = armOnly({
+      audiences: new Map(),
+      appRoleAssignedTo: new Map(),
+      principalDetails: undefined,
+      groupMembers: new Map(),
+      resources: new Map(),
+      identityAssignments: new Map(),
+    })
+    expect(model.entra).toBe(false)
+    expect(model.pending).toEqual([])
+    expect(model.problems).toEqual([])
+  })
+
+  it('has no principals, grants or memberships, but keeps the routes', () => {
+    const model = armOnly()
+    expect(model.principals.size).toBe(0)
+    expect(model.edges.map((edge) => edge.kind)).toEqual(['route', 'route'])
+    expect(model.backends.get('backend:orders-backend')?.url).toBe(
+      'https://ca-contoso-orders.example.net/api',
+    )
+  })
+
+  it('names the identity APIM uses, from ARM, without its target or roles', () => {
+    expect(armOnly().operations[0]?.outbound).toEqual({
+      mechanism: 'ManagedIdentity',
+      source: { scope: 'api', section: 'inbound' },
+      clientId: APIM_IDENTITY.clientId,
+      principalId: APIM_IDENTITY.principalId,
+      resource: RESOURCE,
+      targetIds: [],
+      roles: [],
+    })
+  })
+
+  it('raises only the findings the policies and ARM show', () => {
+    expect(kinds(armOnly().findings)).toEqual(['parent-inbound-ignored', 'parent-inbound-ignored'])
+    const noRoles = armOnly({ apiPolicy: ok(NO_ROLES_API_POLICY) })
+    const perOperation = ['parent-inbound-ignored', 'no-role-requirement', 'no-outbound-auth']
+    expect(kinds(noRoles.findings)).toEqual([...perOperation, ...perOperation])
+  })
+
+  it('names nothing to fetch from Graph', () => {
+    expect(modelLookups(armOnly())).toEqual({
+      servicePrincipalIds: [],
+      groupIds: [],
+      identityPrincipalIds: [APIM_IDENTITY.principalId],
+    })
+  })
+})

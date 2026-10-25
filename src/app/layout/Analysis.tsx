@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { useAccessModel } from '@/domain'
 import { views } from '@/views/registry'
 import { useSelection } from '../session/selectionStore'
+import { useSession } from '../session/sessionStore'
 import { Landing } from './Landing'
 import { Scripts } from './Scripts'
 import { SCRIPTS_PAGE_ID, useUi } from './uiStore'
@@ -15,7 +16,8 @@ import { SCRIPTS_PAGE_ID, useUi } from './uiStore'
 export default function Analysis() {
   const service = useSelection((state) => state.service)
   const api = useSelection((state) => state.api)
-  const model = useAccessModel(service, api)
+  const entra = useSession((state) => state.entra)
+  const model = useAccessModel(service, api, entra)
   const activeId = useUi((state) => state.activeViewId)
   const view = views.find((item) => item.id === activeId)
   if (model && activeId === SCRIPTS_PAGE_ID) return <Scripts model={model} />

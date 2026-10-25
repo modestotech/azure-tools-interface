@@ -122,7 +122,10 @@ export function graphElements(
         kind: 'route',
         source: operationNodeId(edge.operationId),
         target: backendNodeId(edge.backendKey),
-        label: auth?.mechanism === 'ManagedIdentity' ? 'managed identity' : outboundText(auth),
+        label:
+          auth?.mechanism === 'ManagedIdentity'
+            ? 'managed identity'
+            : outboundText(auth, model.entra),
         effective: true,
       })
     }

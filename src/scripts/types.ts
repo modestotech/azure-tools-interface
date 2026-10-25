@@ -27,6 +27,11 @@ export interface ScriptDefinition {
   readonly title: string
   readonly description: string
   readonly params: readonly ScriptParam[]
+  /**
+   * Whether the script reads Entra data (principals, groups). Such a script isn't run in ARM-only
+   * mode, where its result would be empty for lack of data, not for lack of problems.
+   */
+  readonly needsEntra: boolean
   /** Gets every declared param, set or defaulted. Runs on a partial model while it loads. */
   run(model: AccessModel, params: ScriptParams): ScriptResult
 }

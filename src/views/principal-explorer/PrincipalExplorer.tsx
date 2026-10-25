@@ -10,6 +10,7 @@ import {
   type PrincipalReach,
 } from '@/domain'
 import { cn } from '@/lib/utils'
+import { ArmOnlyNote } from '../shared/ArmOnlyNote'
 import type { ViewProps } from '../types'
 import { PrincipalDetails } from './PrincipalDetails'
 
@@ -28,6 +29,18 @@ function matches(entry: PrincipalReach, filter: string): boolean {
 
 /** A searchable list of every principal in the model, and what the selected one can reach. */
 export default function PrincipalExplorer({ model }: ViewProps) {
+  if (!model.entra) {
+    return (
+      <ArmOnlyNote>
+        principals come from Entra (who holds the API's roles, and who is in the groups), so there
+        are none to list.
+      </ArmOnlyNote>
+    )
+  }
+  return <Explorer model={model} />
+}
+
+function Explorer({ model }: ViewProps) {
   const entries = useMemo(() => principalReach(model), [model])
   const [filter, setFilter] = useState('')
   const [selectedId, setSelectedId] = useState<string>()

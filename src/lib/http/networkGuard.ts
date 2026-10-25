@@ -9,10 +9,23 @@ import { API_RESOURCES } from '@/lib/token/resources'
  *
  * Allowed: a GET without a body, and a POST to Graph `$batch` whose body is JSON with only GET
  * sub-requests (each exactly `{ id, method: 'GET', url }`, with a relative URL). Everything else is
- * refused before the browser sends it.
+ * refused before the browser sends it. In ARM-only mode (`setGraphAllowed(false)`), nothing may go
+ * to Graph at all, so the only thing left is a GET to anywhere else, ARM included.
  */
 
 const BATCH_URL = `${API_RESOURCES.graph.baseUrl}/$batch`
+const GRAPH_ORIGIN = API_RESOURCES.graph.origin
+
+/**
+ * Whether Graph may be called: false in ARM-only mode. Module state on purpose: the guard is
+ * installed before the app exists, and the session store keeps this in sync with the mode.
+ * Starts false, so nothing reaches Graph before the session has said it may.
+ */
+let graphAllowed = false
+
+export function setGraphAllowed(allowed: boolean): void {
+  graphAllowed = allowed
+}
 const SUB_REQUEST_KEYS = ['id', 'method', 'url']
 
 export class ReadOnlyViolation extends Error {
@@ -48,14 +61,29 @@ function isGetOnlyBatch(body: unknown): boolean {
   return Array.isArray(requests) && requests.length > 0 && requests.every(isGetSubRequest)
 }
 
+/** The URL's origin only: its path and query can hold subscription, tenant and object IDs. */
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin
+  } catch {
+    return 'an invalid URL'
+  }
+}
+
 /**
  * Whether a request may leave the browser. `body` is what would be sent: undefined or null for
- * none. Pure.
+ * none. `allowGraph` false refuses anything to Graph. Pure.
  */
-export function isReadOnlyRequest(method: string, url: string, body: unknown): boolean {
+export function isReadOnlyRequest(
+  method: string,
+  url: string,
+  body: unknown,
+  allowGraph: boolean,
+): boolean {
+  if (!allowGraph && originOf(url) === GRAPH_ORIGIN) return false
   const verb = method.toUpperCase()
   if (verb === 'GET') return body === undefined || body === null
-  return verb === 'POST' && url === BATCH_URL && isGetOnlyBatch(body)
+  return allowGraph && verb === 'POST' && url === BATCH_URL && isGetOnlyBatch(body)
 }
 
 /** What `fetch(input, init)` would send: method, URL and body. */
@@ -67,15 +95,6 @@ function describeFetch(input: RequestInfo | URL, init: RequestInit | undefined) 
   // sends one, so any Request carrying a body is refused.
   const body = init?.body ?? (request?.body ? request.body : undefined)
   return { method, url, body }
-}
-
-/** The URL's origin only: its path and query can hold subscription, tenant and object IDs. */
-function originOf(url: string): string {
-  try {
-    return new URL(url).origin
-  } catch {
-    return 'an invalid URL'
-  }
 }
 
 function violation(what: string, url: string): ReadOnlyViolation {
@@ -111,8 +130,12 @@ export function installNetworkGuard(target: GuardTarget = globalThis): void {
     const originalFetch = target.fetch.bind(target)
     target.fetch = mark((input: RequestInfo | URL, init?: RequestInit) => {
       const { method, url, body } = describeFetch(input, init)
-      if (!isReadOnlyRequest(method, url, body)) {
-        const error = violation(`a ${method.toUpperCase()} request`, url)
+      if (!isReadOnlyRequest(method, url, body, graphAllowed)) {
+        const graphRefused = !graphAllowed && originOf(url) === GRAPH_ORIGIN
+        const what = graphRefused
+          ? 'a Graph request (ARM-only mode)'
+          : `a ${method.toUpperCase()} request`
+        const error = violation(what, url)
         console.error(error)
         return Promise.reject(error)
       }
@@ -131,6 +154,8 @@ export function installNetworkGuard(target: GuardTarget = globalThis): void {
       const method = String(args[0])
       const url = String(args[1])
       if (method.toUpperCase() !== 'GET') throw violation(`a ${method.toUpperCase()} request`, url)
+      if (!graphAllowed && originOf(url) === GRAPH_ORIGIN)
+        throw violation('a Graph request (ARM-only mode)', url)
       urls.set(this, url)
       Reflect.apply(open, this, args)
     })

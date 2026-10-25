@@ -88,6 +88,18 @@ function managedIdentityAuth(
   const { collector, inputs } = context
   const { resource, clientId, source } = rule
   const principalId = identityPrincipalId(context, operationId, clientId)
+  // ARM only: which identity APIM uses comes from ARM; its target and roles there need Entra.
+  if (!inputs.entra) {
+    return {
+      mechanism: 'ManagedIdentity',
+      source,
+      clientId,
+      principalId,
+      resource,
+      targetIds: [],
+      roles: [],
+    }
+  }
   const what = `service principal for resource ${resource}`
   const targets = read(collector, what, inputs.resources.get(resource))
   if (targets === null || targets?.length === 0) {

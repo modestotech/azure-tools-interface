@@ -17,6 +17,11 @@ export type Loadable<T> = ResourceResult<T> | undefined
  * so the model can be built (and shown) at every step.
  */
 export interface AccessModelInputs {
+  /**
+   * Whether Entra (Microsoft Graph) is used. When it isn't (ARM-only mode), the Graph inputs below
+   * are never read: nothing waits on them, and no finding that needs Entra data is raised.
+   */
+  readonly entra: boolean
   readonly api: ArmApi
   readonly service: Loadable<ArmApimService>
   readonly operations: Loadable<readonly ArmOperation[]>

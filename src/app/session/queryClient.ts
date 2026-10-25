@@ -1,5 +1,6 @@
 import { QueryClient, type Query } from '@tanstack/react-query'
 import { API_RESOURCES, type ApiKind } from '@/lib/token'
+import { queryKeys } from '@/services/queryKeys'
 import { sessionStore } from './sessionStore'
 
 /**
@@ -39,6 +40,8 @@ export function retryFailedQueries(api: ApiKind): Promise<void> {
 }
 
 sessionStore.subscribe((state, previous) => {
+  // Switching to ARM only also drops what Graph returned earlier: the session then holds ARM data only.
+  if (previous.entra && !state.entra) queryClient.removeQueries({ queryKey: queryKeys.graph.all })
   for (const api of Object.keys(API_RESOURCES) as ApiKind[]) {
     if (state.tokens[api] && state.tokens[api] !== previous.tokens[api])
       void retryFailedQueries(api)

@@ -12,6 +12,7 @@ export const ineffectiveMembersScript: ScriptDefinition = {
   description:
     "Apps and managed identities in a role-holding group. Group roles don't reach them, so they can't call through it.",
   params: [],
+  needsEntra: true,
   run(model) {
     const operations = operationLookup(model)
     const rows = model.findings.flatMap((finding) => {

@@ -27,6 +27,12 @@ export interface OperationAccess {
 
 /** Everything the views and scripts read about the selected API. */
 export interface AccessModel {
+  /**
+   * Whether Entra data was used. When false (ARM-only mode), there are no principals, grants or
+   * memberships, and outbound auth has no target service principals or roles: not because there
+   * are none, but because they weren't looked up. Views say so instead of showing "none".
+   */
+  readonly entra: boolean
   readonly api: Api
   readonly service: ApimService | undefined
   readonly operations: readonly OperationAccess[]
@@ -87,6 +93,7 @@ export function buildAccessModel(inputs: AccessModelInputs): AccessModel {
     return { operation, policy, ...resolveOutbound(context, api, policy) }
   })
   return {
+    entra: inputs.entra,
     api,
     service: service ? toApimService(service) : undefined,
     operations: access,

@@ -15,7 +15,12 @@ export function Landing({ model }: { model: AccessModel | undefined }) {
     () =>
       model &&
       new Map(
-        scripts.map((script) => [script.id, script.run(model, defaultParams(script)).rows.length]),
+        scripts.map((script) => [
+          script.id,
+          script.needsEntra && !model.entra
+            ? 'needs Entra'
+            : `${String(script.run(model, defaultParams(script)).rows.length)} found`,
+        ]),
       ),
     [model],
   )
@@ -73,7 +78,7 @@ export function Landing({ model }: { model: AccessModel | undefined }) {
                   </span>
                   {found && (
                     <span className="text-muted-foreground shrink-0 text-xs">
-                      {found.get(script.id)} found
+                      {found.get(script.id)}
                     </span>
                   )}
                 </button>
