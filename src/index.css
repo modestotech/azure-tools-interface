@@ -88,6 +88,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Keep room for the scrollbar, so the page doesn't shift sideways when content (e.g. the
+     operation details) makes it scroll. */
+  html {
+    scrollbar-gutter: stable;
+  }
   body {
     @apply bg-background text-foreground antialiased;
   }
