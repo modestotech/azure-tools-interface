@@ -82,6 +82,10 @@ export default defineConfig({
           groups: [
             { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
             { name: 'elkjs', test: /[\\/]node_modules[\\/]elkjs[\\/]/ },
+            {
+              name: 'echarts',
+              test: /[\\/]node_modules[\\/](echarts|zrender|echarts-for-react)[\\/]/,
+            },
             { name: 'react-flow', test: /[\\/]node_modules[\\/]@xyflow[\\/]/ },
           ],
         },

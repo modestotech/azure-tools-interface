@@ -16,7 +16,7 @@ export default function Analysis() {
   const model = useAccessModel(service, api)
   const activeId = useUi((state) => state.activeViewId)
   const view = views.find((item) => item.id === activeId)
-  if (!view || !model) return <Landing />
+  if (!view || !model) return <Landing model={model} />
   return (
     <Suspense fallback={<p className="text-muted-foreground text-sm">Loading view…</p>}>
       <view.component model={model} />

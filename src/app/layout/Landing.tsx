@@ -1,13 +1,21 @@
+import { Suspense } from 'react'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import type { AccessModel } from '@/domain'
+import { OverviewCharts } from '@/views/overview'
 import { views } from '@/views/registry'
 import { AnalysisStatus } from '../scope/AnalysisStatus'
 import { uiStore } from './uiStore'
 
 /** The landing page: what the analysis found so far, and the views to open. */
-export function Landing() {
+export function Landing({ model }: { model: AccessModel | undefined }) {
   return (
     <div className="space-y-4">
       <AnalysisStatus />
+      {model && (
+        <Suspense fallback={null}>
+          <OverviewCharts model={model} />
+        </Suspense>
+      )}
       {views.length === 0 ? (
         <p className="text-muted-foreground text-sm">No views are registered yet.</p>
       ) : (

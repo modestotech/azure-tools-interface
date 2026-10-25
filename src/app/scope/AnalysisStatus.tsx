@@ -1,7 +1,7 @@
 import { useAccessModel } from '@/domain'
 import { useSelection } from '../session/selectionStore'
 
-/** A one-line summary of the running analysis, until the views (M6) show the model itself. */
+/** A one-line summary of the running analysis, above the landing page's chart. */
 export function AnalysisStatus() {
   const service = useSelection((state) => state.service)
   const api = useSelection((state) => state.api)
