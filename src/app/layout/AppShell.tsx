@@ -1,9 +1,11 @@
 import { lazy, Suspense } from 'react'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { cn } from '@/lib/utils'
 import { views } from '@/views/registry'
 import { ScopePicker } from '../scope/ScopePicker'
 import { useSelection } from '../session/selectionStore'
 import { TokenScreen } from '../session/TokenScreen'
+import { AnalysisError } from './AnalysisError'
 import { DemoBanner } from './DemoBanner'
 import { LogDock } from './LogDock'
 import { uiStore, useUi } from './uiStore'
@@ -39,8 +41,11 @@ function Nav() {
 /** The analysis, with the parser and mapper, loads only once an API is chosen. */
 const Analysis = lazy(() => import('./Analysis'))
 
+/** The analysis; if it fails, the error stays here and clears when the API or view changes. */
 function Content() {
+  const service = useSelection((state) => state.service)
   const api = useSelection((state) => state.api)
+  const viewId = useUi((state) => state.activeViewId)
   if (!api) {
     return (
       <p className="text-muted-foreground text-sm">
@@ -49,9 +54,11 @@ function Content() {
     )
   }
   return (
-    <Suspense fallback={<p className="text-muted-foreground text-sm">Loading the analysis…</p>}>
-      <Analysis />
-    </Suspense>
+    <ErrorBoundary fallback={AnalysisError} resetKeys={[service, api, viewId]}>
+      <Suspense fallback={<p className="text-muted-foreground text-sm">Loading the analysis…</p>}>
+        <Analysis />
+      </Suspense>
+    </ErrorBoundary>
   )
 }
 
