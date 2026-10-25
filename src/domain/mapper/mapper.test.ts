@@ -1,95 +1,29 @@
-import { HttpError } from '@/lib/http'
+import { apimServiceSchema, apiSchema, operationSchema } from '@/services/arm/schemas'
 import {
-  apimServiceSchema,
-  apiSchema,
-  backendSchema,
-  operationSchema,
-} from '@/services/arm/schemas'
-import { directMembers } from '@/services/graph'
-import {
-  appRoleAssignmentSchema,
-  groupMemberSchema,
-  servicePrincipalSchema,
-} from '@/services/graph/schemas'
-import type { ResourceResult } from '@/services/result'
+  AUDIENCE,
+  empty,
+  fixtureInputs,
+  forbidden,
+  ok,
+  RESOURCE,
+  sp,
+} from '@/test/fixtures/accessModel'
 import { APIM_IDENTITY, armFixtures } from '@/test/fixtures/arm'
 import {
   ALICE,
   BOB,
-  graphFixtures,
   ORDERS_API_SP,
   ORDERS_BACKEND_SP,
   ORDERS_READERS,
   REPORTING_MI_SP,
   WEBSHOP_SP,
 } from '@/test/fixtures/graph'
-import apiPolicyXml from '@/test/fixtures/policies/api-policy.xml?raw'
-import createOrderPolicyXml from '@/test/fixtures/policies/create-order-policy.xml?raw'
-import globalPolicyXml from '@/test/fixtures/policies/global-policy.xml?raw'
 import type { Finding } from '../findings'
 import { buildAccessModel } from './buildAccessModel'
 import { meetsClaim } from './inbound'
 import type { AccessModelInputs } from './inputs'
 import { modelLookups, policyLookups } from './lookups'
 import { effectivePolicies } from './policies'
-
-const AUDIENCE = 'api://orders-api.contoso.example.net'
-const RESOURCE = 'api://orders-backend.contoso.example.net'
-
-const ok = <T>(data: T): ResourceResult<T> => ({ status: 'ok', data })
-const empty: ResourceResult<never> = { status: 'empty' }
-const forbidden: ResourceResult<never> = {
-  status: 'forbidden',
-  error: new HttpError('forbidden', 'graph', 'Access denied (fictional)'),
-}
-
-const sp = (raw: unknown) => servicePrincipalSchema.parse(raw)
-const assignments = (raw: readonly unknown[] = []) =>
-  raw.map((a) => appRoleAssignmentSchema.parse(a))
-
-/** The complete fictional setup, as the services would return it for `orders-api`. */
-function fixtureInputs(): AccessModelInputs {
-  return {
-    api: apiSchema.parse(armFixtures.apis[0]),
-    service: ok(apimServiceSchema.parse(armFixtures.services[0])),
-    operations: ok(
-      (armFixtures.operations['orders-api'] ?? []).map((o) => operationSchema.parse(o)),
-    ),
-    globalPolicy: ok(globalPolicyXml),
-    apiPolicy: ok(apiPolicyXml),
-    operationPolicies: new Map([
-      ['list-orders', empty],
-      ['create-order', ok(createOrderPolicyXml)],
-    ]),
-    backends: new Map([
-      ['orders-backend', ok(backendSchema.parse(armFixtures.backends['orders-backend']))],
-    ]),
-    audiences: new Map([[AUDIENCE, ok([sp(ORDERS_API_SP)])]]),
-    appRoleAssignedTo: new Map([
-      [ORDERS_API_SP.id, ok(assignments(graphFixtures.appRoleAssignedTo[ORDERS_API_SP.id]))],
-    ]),
-    principalDetails: ok(new Map([[WEBSHOP_SP.id, ok(sp(WEBSHOP_SP))]])),
-    groupMembers: new Map([
-      [
-        ORDERS_READERS.id,
-        ok(
-          directMembers(
-            (graphFixtures.groupMembers[ORDERS_READERS.id] ?? []).map((m) =>
-              groupMemberSchema.parse(m),
-            ),
-          ),
-        ),
-      ],
-    ]),
-    resources: new Map([[RESOURCE, ok([sp(ORDERS_BACKEND_SP)])]]),
-    identityAssignments: new Map([
-      [
-        APIM_IDENTITY.principalId,
-        ok(assignments(graphFixtures.appRoleAssignments[APIM_IDENTITY.principalId])),
-      ],
-    ]),
-  }
-}
 
 const kinds = (findings: readonly Finding[]) => findings.map((finding) => finding.kind)
 
