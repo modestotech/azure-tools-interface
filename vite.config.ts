@@ -70,13 +70,19 @@ export default defineConfig({
     },
   },
   build: {
+    // elkjs is one 1.4 MB GWT-compiled file, and only the access graph (lazy) loads it. The app's
+    // own chunks stay well under Vite's default 500 kB.
+    chunkSizeWarningLimit: 1500,
     rolldownOptions: {
       output: {
         codeSplitting: {
           // React rarely changes between releases, so it gets its own long-cached file. This also
-          // keeps the app's own chunk under Vite's 500 kB warning.
+          // keeps the app's own chunk under Vite's 500 kB warning. The heavy view libraries get
+          // their own files too, loaded only by the views that use them.
           groups: [
             { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: 'elkjs', test: /[\\/]node_modules[\\/]elkjs[\\/]/ },
+            { name: 'react-flow', test: /[\\/]node_modules[\\/]@xyflow[\\/]/ },
           ],
         },
       },

@@ -30,6 +30,12 @@ const ALLOWED_ORIGINS: Readonly<Record<string, string>> = {
     "$schema identifier in Zod's toJSONSchema (bundled, unused); never fetched",
   'http://json-schema.org':
     "$schema identifier in Zod's toJSONSchema (bundled, unused); never fetched",
+  'http://www.eclipse.org':
+    'EMF/ELK namespace identifiers inside elkjs (the access graph layout); never fetched',
+  'https://reactflow.dev':
+    "React Flow's attribution link text; the view hides the attribution panel; never fetched",
+  'https://rolldown.rs':
+    "error text in the bundler's require shim, referenced by elkjs's browserify wrapper; never fetched",
 }
 
 /**
