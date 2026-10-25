@@ -14,10 +14,14 @@ function setup() {
 }
 
 describe('TokenScreen', () => {
-  it('shows the safety notice before anything is pasted', () => {
-    setup()
-    expect(screen.getByText('How your tokens are handled')).toBeInTheDocument()
-    expect(screen.getByText(/Not saved\./)).toBeInTheDocument()
+  it('shows the safety notice folded to its title, and opens it on click', async () => {
+    const { user } = setup()
+    const title = screen.getByText('How your tokens are handled')
+    const details = title.closest('details')
+    expect(details).not.toHaveAttribute('open')
+    await user.click(title)
+    expect(details).toHaveAttribute('open')
+    expect(screen.getByText(/Not saved\./)).toBeVisible()
   })
 
   it('decodes a pasted ARM token and fills in the tenant from it', async () => {

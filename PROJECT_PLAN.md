@@ -120,7 +120,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   - copyable `az` commands (prefilled with the tenant ID)
   - the tenant field keeps its draft locally and shows a field error when `setTenantId` returns `false` (the store already rejects anything but a GUID or domain name)
   - expiry countdown
-  - **Safety notice**, shown above the token fields before anything is pasted. Plain language, no fine print:
+  - **Safety notice**, above the token fields, folded to its title (with a one-line gist) until clicked. Plain language, no fine print:
     - **Not saved:** tokens are kept in this tab's memory only. Nothing goes to `localStorage`, `sessionStorage`, cookies or the URL. Reloading or closing the tab erases them, and a **"Clear session"** button does the same immediately, wiping tokens and all fetched data.
     - **Not sent anywhere else:** tokens go only to `management.azure.com` and `graph.microsoft.com`, straight from the browser. There is no backend, no telemetry and no third-party script. The page's Content Security Policy blocks every other destination (see below).
     - **Read-only app:** the app only sends `GET` requests (plus Graph `$batch`, which only wraps GETs).
