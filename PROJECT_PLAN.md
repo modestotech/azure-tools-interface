@@ -138,7 +138,7 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
   1. **Subscription**: dropdown from `GET /subscriptions` (name + masked ID). No pasting of subscription IDs.
   2. **APIM instance**: dropdown of services in that subscription.
   3. **API**: dropdown of that instance's APIs, required. No "all APIs" option; analysis starts only once an API is chosen. Changing the API discards the previous analysis.
-- Layout (**done**): nav and landing page generated from the registries (empty until M6/M7); the request log is docked as a collapsible bottom panel with masked lines and counters, which M5 turns into the Matrix log.
+- Layout (**done**): nav and landing page generated from the registries; the request log is docked as a collapsible bottom panel with masked lines and counters, which M5 turns into the Matrix log.
 
 **M5 — Matrix request log (`components/request-log/`)** (done)
 - Monospace green-on-black stream that auto-scrolls; you can pause it by scrolling up. Virtualized (`@tanstack/react-virtual`).
@@ -160,13 +160,14 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - `backends` (**done**): one card per backend the API routes to (or its serviceUrl): URL, type, TLS, the credential *mechanism* only, the operations using it, and per managed identity the token audience and the roles it holds there.
 - One small ECharts summary on the landing page (**done**, `views/overview/`): auth coverage as one stacked bar, findings by kind colored by severity, and the same numbers as a table.
 
-**M7 — Scripts (`scripts/registry.ts`) and a generic result renderer**
-Starter scripts:
-- operations with no auth
-- principals with access to >N operations
-- groups granting access via ineffective SP/MI members
-- HTTP / no-outbound-auth backends
-- unresolved rules
+**M7 — Scripts (`scripts/registry.ts`) and a generic result renderer** (done)
+- Scripts declare numeric params (`{ key, label, default, min }`) and run live on the model as it loads; results render in `components/ResultTable.tsx` (sortable, virtualized, CSV/JSON export). The scripts page has its own nav entry; the landing page lists every script with its result count.
+- Starter scripts (`scripts/starter/`), each reading findings or `principalReach()` from the domain:
+  - operations with no auth (no `validate-jwt`, or one that requires no role)
+  - principals with access to >N operations (N defaults to 1)
+  - groups granting access via ineffective SP/MI members
+  - HTTP / no-outbound-auth backends, plus the other backend and outbound-identity findings, one row per backend and issue
+  - unresolved rules, with the XML to review
 
 **M8 — Hardening**
 - CORS check against real ARM/Graph (you run this, see §6). Add a Vite proxy only if needed, and document it in CLAUDE.md › Known gotchas.

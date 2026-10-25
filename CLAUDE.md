@@ -153,7 +153,7 @@ src/
     backends/
     overview/          #   the landing page's ECharts summary; not a registered view, the shell lazy-loads it
     shared/            #   pure helpers shared by views: summaries.ts (auth/outbound text), FindingList
-  scripts/             # read-only analyses, registered in scripts/registry.ts
+  scripts/             # read-only analyses, registered in scripts/registry.ts; starter/ holds the first five
   components/          # shared UI
     request-log/       #   the Matrix log: presentational, fed by LogDock (app/layout) from requestLogStore + uiStore
   test/                # fixtures (sample policy XML, ARM/Graph JSON) and MSW handlers
@@ -177,8 +177,8 @@ Guidelines from `TECH_DEBT_PLAN_M1.md`:
 New visualizations and analyses plug in through registries, not by editing the app shell.
 
 - A **view** exports `{ id, title, description, icon, component }` (`views/types.ts`) and is added to `views/registry.ts`. The component is lazy (`React.lazy`) and receives the model as a prop (`{ model }`): the shell calls `useAccessModel()` once, so views don't each rebuild it. The model fills in while loading (`model.pending`).
-- A **script** exports `{ id, title, description, run(model, params) => ScriptResult }` and is added to `scripts/registry.ts`. Scripts are pure functions over the domain model (e.g. "operations with no auth policy", "principals with access to >N operations", "groups granting access with external members"). Results render through a generic table/JSON output component.
-- Navigation and the landing page are generated from the registries.
+- A **script** exports `{ id, title, description, params, run(model, params) => ScriptResult }` (`scripts/types.ts`) and is added to `scripts/registry.ts`. `params` declares numeric inputs (`{ key, label, default, min }`), and `run` gets every one of them, set or defaulted. Scripts are pure functions over the domain model (e.g. "operations with no auth policy", "principals with access to >N operations", "groups granting access with external members"). They read findings and `@/domain` helpers such as `principalReach()`, and may not import views or components. A `ScriptResult` is columns plus rows; it renders through `components/ResultTable.tsx` (sortable, virtualized, CSV/JSON export), which knows nothing about the domain. The scripts page is `app/layout/Scripts.tsx`; its place in the navigation is `SCRIPTS_PAGE_ID` (`uiStore`), which no view may use as its ID.
+- Navigation and the landing page are generated from the registries. The nav doesn't read the script registry (scripts import `@/domain` at runtime, which stays out of the first page load), so its "Scripts" entry is always there; the landing page, under the lazy boundary, lists every script with its result count.
 
 ## Data sources
 
