@@ -80,7 +80,7 @@ Required permissions for the signed-in user: `Reader` (or `API Management Servic
 
 Deployment target: static hosting (Azure Static Web Apps or Storage static website). `pnpm build` must produce a fully static `dist/` with client-side routing fallback.
 
-The Content Security Policy and hosting headers are defined once, in `security.config.ts`. The build puts the CSP in a `<meta>` tag right after `<meta charset>` in `index.html` and generates `dist/staticwebapp.config.json` (routing fallback plus `globalHeaders`: CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`); there is no hand-written copy in `public/`. `connect-src` allows only `'self'`, ARM and Graph. `frame-ancestors` only works as a header, so a Storage static website (no custom headers) gets the `<meta>` policy without it. Not applied to `pnpm dev`. Changing the policy means changing `tests/security/build.test.ts` too, which states the expected directives literally. UI components must not inject `<style>` tags, which `style-src 'self'` blocks: Radix Select, Dialog and modal Popovers lock scrolling that way, so dropdowns use the `Combobox` (`components/Combobox.tsx`, a non-modal Popover plus Command) and overlays stay non-modal.
+The Content Security Policy and hosting headers are defined once, in `security.config.ts`. The build puts the CSP in a `<meta>` tag right after `<meta charset>` in `index.html` and generates `dist/staticwebapp.config.json` (routing fallback plus `globalHeaders`: CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`); there is no hand-written copy in `public/`. `connect-src` allows only `'self'`, ARM and Graph. `frame-ancestors` only works as a header, so a Storage static website (no custom headers) gets the `<meta>` policy without it. Not applied to `pnpm dev`. Changing the policy means changing `tests/security/build.test.ts` too, which states the expected directives literally. UI components must not inject `<style>` tags, which `style-src 'self'` blocks: Radix Select, Dialog and modal Popovers lock scrolling that way, so dropdowns use the `Combobox` (`components/Combobox.tsx`, a non-modal Popover plus Command) and overlays stay non-modal. Inline `style` attributes written as HTML are blocked too (React's `style` prop is fine, it goes through the CSSOM): ECharts tooltips use `renderMode: 'richText'`, because its HTML tooltip writes styles through `innerHTML`. elkjs is used through `elkjs/lib/elk.bundled.js`, which lays out on the main thread, so there is no worker script to host or allow.
 
 ## Commands
 
@@ -146,10 +146,13 @@ src/
       lookups.ts       #   what to fetch next (policyLookups, modelLookups), for useAccessModel()
     useAccessModel.ts  # the hook views use: chains the query hooks through the lookups, builds the model
   views/               # one folder per visualization, registered in views/registry.ts
-    access-graph/
+    access-graph/      #   elements.ts (pure: model → nodes/edges), layout.ts (elkjs), React Flow component
     operations-table/
     principal-explorer/
     backends/
+    overview/          #   the landing page's ECharts summary; not a registered view, the shell lazy-loads it
+    shared/            #   pure helpers shared by views: summaries.ts (auth/outbound text), reach.ts
+                       #   (who reaches which operation, and how), FindingList
   scripts/             # read-only analyses, registered in scripts/registry.ts
   components/          # shared UI
     request-log/       #   the Matrix log: presentational, fed by LogDock (app/layout) from requestLogStore + uiStore
@@ -167,7 +170,7 @@ Module-level state in `lib/` is limited to `requestLogStore` (`lib/http/requestL
 Guidelines from `TECH_DEBT_PLAN_M1.md`:
 - **Policy parser** (built): extractors read the typed tree in `xmlTree.ts`, never fast-xml-parser's raw arrays. Element handling lives only in the `ELEMENTS` table in `elements.ts`. `<base />` composition goes through `composeSection()` for every section.
 - **Findings:** computed once in `domain/` (no auth, HTTP backend, no outbound auth, unresolved rules, …). Scripts filter or present them and never re-implement the checks. Keep `buildAccessModel()` pure and separate from the fetching in `useAccessModel()`. Views get the model from `useAccessModel(svc, api)`; nothing is fetched, not even the service's identity or global policy, until an API is chosen.
-- **Views:** registry entries are lazy-loaded (`React.lazy`), because React Flow, elkjs and ECharts are heavy. React and React DOM are a separate, long-cached chunk (`codeSplitting` in `vite.config.ts`). The domain (policy parser, XML libraries, mapper) is lazy too: the shell loads `app/layout/Analysis.tsx` only once an API is chosen, so the first page load stays small. Import `@/domain` at runtime only from code under that boundary; type imports are fine anywhere. The CSP is defined once (`security.config.ts`, see Deployment target).
+- **Views:** registry entries are lazy-loaded (`React.lazy`), because React Flow, elkjs and ECharts are heavy. React and React DOM are a separate, long-cached chunk (`codeSplitting` in `vite.config.ts`), and so are elkjs, ECharts and React Flow, which only their views load. elkjs alone is ~1.4 MB, hence `chunkSizeWarningLimit`. The domain (policy parser, XML libraries, mapper) is lazy too: the shell loads `app/layout/Analysis.tsx` only once an API is chosen, so the first page load stays small. Import `@/domain` at runtime only from code under that boundary; type imports are fine anywhere. The CSP is defined once (`security.config.ts`, see Deployment target).
 
 ### Extensibility (views and scripts)
 

@@ -150,15 +150,15 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - The "reveal IDs" toggle and the filters live in `uiStore`, so "Clear session" resets them.
 - An × in the header hides the log entirely; a small "show request log" button (with the in-flight count) brings it back.
 
-**M6 — Views (`views/registry.ts`)**
+**M6 — Views (`views/registry.ts`)** (done)
 - `operations-table` (**done**): TanStack Table (virtualized) with a text filter, sortable columns and a details panel for the selected operation (findings, XML to review), showing:
   - auth summary, source scope, backend and outbound auth
   - "needs manual review" badges
   - CSV/JSON export
-- `access-graph`: React Flow + elkjs, layered left to right: principal / member → operation → backend. Node details show rules and outbound auth; ineffective edges are greyed out; group members lazy-load.
-- `principal-explorer`: pick a principal and see the operations it can reach, and why.
-- `backends`: backend entities, URL, TLS, the credential *mechanism* only, and the roles APIM's user-assigned identity holds on the backend's service principal.
-- One small ECharts summary on the landing page (auth coverage, findings by type).
+- `access-graph` (**done**): React Flow + elkjs, layered left to right: principal / member → operation → backend, one column each (elkjs partitioning). Node details show the operation's auth, outbound auth and findings, a principal's paths, or a backend's routes; ineffective memberships are dashed and greyed out. Groups start collapsed and draw their direct members on request (the members are still fetched with the model; only drawing is deferred).
+- `principal-explorer` (**done**): a filterable, virtualized list of every principal; the selected one shows each operation it reaches and why (role held directly, or through which group), whether it can call, and for a group its direct members.
+- `backends` (**done**): one card per backend the API routes to (or its serviceUrl): URL, type, TLS, the credential *mechanism* only, the operations using it, and per managed identity the token audience and the roles it holds there.
+- One small ECharts summary on the landing page (**done**, `views/overview/`): auth coverage as one stacked bar, findings by kind colored by severity, and the same numbers as a table.
 
 **M7 — Scripts (`scripts/registry.ts`) and a generic result renderer**
 Starter scripts:
