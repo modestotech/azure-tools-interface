@@ -43,6 +43,8 @@ const COVERAGE_COLOR: Readonly<Record<AuthCoverage, string | undefined>> = {
   roles: STATUS.good,
   'token-only': STATUS.warning,
   none: STATUS.critical,
+  // Unknown, not good or bad: neutral like loading, told apart by its label.
+  unreadable: undefined,
   loading: undefined,
 }
 const SEVERITY_COLOR: Readonly<Record<Severity, string>> = {

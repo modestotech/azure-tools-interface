@@ -141,6 +141,12 @@ export interface OperationPolicy {
   readonly unresolved: readonly UnresolvedRule[]
   /** Sections that dropped their parent ("parent inbound ignored" when the section is `inbound`). */
   readonly droppedParents: readonly DroppedParent[]
+  /**
+   * Scopes whose policy couldn't be loaded or parsed. When any is listed, the effective policy is
+   * unknown: the rules above are only what the readable scopes hold, so nothing is concluded from
+   * them (no backend, outbound auth, callers or findings about what's missing).
+   */
+  readonly unreadable: readonly PolicyScope[]
 }
 
 // Entra

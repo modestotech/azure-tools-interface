@@ -243,6 +243,7 @@ The parser turns effective policy XML into `AccessRule`s. Key behaviors:
   - **Anything else** → an `UnresolvedRule` with the raw XML snippet, shown in the UI as "needs manual review". This includes `<choose>`, `<include-fragment>`, `{{named values}}`, `validate-azure-ad-token`, `send-request`, `set-backend-service base-url` and `@(...)` expressions in access or routing attributes. Never silently drop it or guess.
 - `outbound` and `on-error` don't affect access or routing and are not analyzed. Their `@(...)` expressions must not produce `UnresolvedRule`s.
 - Operations with no authentication policy at any scope are flagged explicitly.
+- A policy that couldn't be loaded (forbidden, error) or parsed makes the effective policy of every operation it applies to **unknown**, not empty. `OperationPolicy.unreadable` lists the scopes. The mapper concludes nothing for such an operation: no backend binding (so no `serviceUrl` fallback), no outbound auth, no callers, and none of the findings about something missing (no auth, no outbound auth, …). The only finding is the "could not be read" unresolved rule, and the views say "unknown". A 404 is different: it means no policy at that scope.
 
 ### Backend resolution
 

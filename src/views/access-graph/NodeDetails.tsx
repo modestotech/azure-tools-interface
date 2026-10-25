@@ -2,7 +2,12 @@ import type { ReactNode } from 'react'
 import type { AccessModel } from '@/domain'
 import { FindingList } from '../shared/FindingList'
 import { PRINCIPAL_KIND_LABEL, principalLabel, principalReach } from '@/domain'
-import { authSummary, authText, operationFindings, outboundText } from '../shared/summaries'
+import {
+  authSummary,
+  authText,
+  operationFindings,
+  operationOutboundText,
+} from '../shared/summaries'
 import { nodeTitle, type AccessNode } from './elements'
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -76,7 +81,7 @@ function OperationDetails({
       <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
         <Field label="Name">{access.operation.displayName}</Field>
         <Field label="Auth">{authText(authSummary(access))}</Field>
-        <Field label="Outbound auth">{outboundText(access.outbound, model.entra)}</Field>
+        <Field label="Outbound auth">{operationOutboundText(access, model.entra)}</Field>
       </dl>
       <FindingList findings={findings} />
     </>

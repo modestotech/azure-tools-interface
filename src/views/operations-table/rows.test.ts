@@ -1,3 +1,4 @@
+import { HttpError } from '@/lib/http'
 import { buildAccessModel } from '@/domain'
 import { fixtureInputs, ok } from '@/test/fixtures/accessModel'
 import { exportRow, operationRows } from './rows'
@@ -80,5 +81,24 @@ describe('operationRows in ARM-only mode', () => {
         'user-assigned identity → api://orders-backend.contoso.example.net (roles need Entra)',
       auth: 'roles (any): Orders.Read, Orders.Write',
     })
+  })
+})
+
+describe('operationRows with a policy that could not be read', () => {
+  it('says auth, callers, backend and outbound auth are unknown, not none', () => {
+    const failed = {
+      status: 'error' as const,
+      error: new HttpError('unexpected-status', 'arm', 'HTTP 500 (fictional)'),
+    }
+    const rows = operationRows(buildAccessModel({ ...fixtureInputs(), apiPolicy: failed }))
+    const unknown = 'unknown: the api policy could not be read'
+    expect(rows.map(exportRow)[0]).toMatchObject({
+      auth: unknown,
+      callers: 'unknown',
+      backend: unknown,
+      outboundAuth: unknown,
+      findings: 'Needs manual review: outside the supported pattern',
+    })
+    expect(rows[0]?.severity).toBe('medium')
   })
 })

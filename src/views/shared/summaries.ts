@@ -17,6 +17,8 @@ export const unique = <T>(values: Iterable<T>) => [...new Set(values)]
 
 export type AuthSummary =
   | { readonly kind: 'loading' }
+  /** Part of the policy couldn't be loaded or parsed, so who may call is unknown. */
+  | { readonly kind: 'unreadable'; readonly scopes: readonly PolicyScope[] }
   | { readonly kind: 'none' }
   | {
       readonly kind: 'jwt'
@@ -29,6 +31,9 @@ export type AuthSummary =
 
 export function authSummary(access: OperationAccess): AuthSummary {
   if (!access.policy) return { kind: 'loading' }
+  if (access.policy.unreadable.length > 0) {
+    return { kind: 'unreadable', scopes: access.policy.unreadable }
+  }
   const jwt = access.policy.rules.filter(
     (rule): rule is JwtValidationRule => rule.kind === 'validate-jwt',
   )
@@ -65,6 +70,8 @@ export function authText(auth: AuthSummary): string {
   switch (auth.kind) {
     case 'loading':
       return 'loading…'
+    case 'unreadable':
+      return unreadableText(auth.scopes)
     case 'none':
       return 'none'
     case 'jwt':
@@ -82,6 +89,17 @@ export function outboundText(outbound: OutboundAuth | undefined, entra: boolean)
   if (!entra) return `${identity} → ${outbound.resource} (roles need Entra)`
   const roles = outbound.roles.map((role) => role.value ?? role.displayName ?? role.id)
   return `${identity} → ${outbound.resource}${roles.length > 0 ? ` (roles: ${roles.join(', ')})` : ''}`
+}
+
+/** Shown for anything that depends on a policy that couldn't be loaded or parsed. */
+export function unreadableText(scopes: readonly PolicyScope[]): string {
+  return `unknown: the ${scopes.join(' and ')} policy could not be read`
+}
+
+/** An operation's outbound auth, or why it's unknown. */
+export function operationOutboundText(access: OperationAccess, entra: boolean): string {
+  const unreadable = access.policy?.unreadable ?? []
+  return unreadable.length > 0 ? unreadableText(unreadable) : outboundText(access.outbound, entra)
 }
 
 /** Shown where a value can only come from Entra, in ARM-only mode. */

@@ -21,7 +21,10 @@ export interface PolicyLookups {
 }
 
 export function policyLookups(policies: Iterable<OperationPolicy>): PolicyLookups {
-  const rules = [...policies].flatMap((policy) => policy.rules)
+  // An operation with an unreadable policy draws no conclusions, so nothing is fetched for it.
+  const rules = [...policies]
+    .filter((policy) => policy.unreadable.length === 0)
+    .flatMap((policy) => policy.rules)
   return {
     audiences: unique(
       rules.flatMap((rule) => (rule.kind === 'validate-jwt' ? rule.audiences : [])),

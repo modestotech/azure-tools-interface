@@ -33,3 +33,11 @@ describe('findingsByKind', () => {
     ])
   })
 })
+
+describe('authCoverage with an unreadable policy', () => {
+  it('counts the operations as unreadable, not as unprotected', () => {
+    const model = buildAccessModel({ ...fixtureInputs(), globalPolicy: ok('<policies><inbound>') })
+    expect(authCoverage(model)).toEqual([{ coverage: 'unreadable', operations: 2 }])
+    expect(findingsByKind(model).map((item) => item.kind)).toEqual(['unresolved-rule'])
+  })
+})

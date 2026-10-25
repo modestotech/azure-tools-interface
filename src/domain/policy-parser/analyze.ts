@@ -4,6 +4,7 @@ import {
   type DroppedParent,
   type OperationPolicy,
   type PolicyDocument,
+  type PolicyScope,
   type UnresolvedRule,
 } from '../model'
 import { composeSection, type ScopedSection } from './compose'
@@ -42,9 +43,12 @@ export function analyzeOperationPolicy(
   const rules: AccessRule[] = []
   const unresolved: UnresolvedRule[] = []
   const droppedParents: DroppedParent[] = []
+  const unreadableScopes: PolicyScope[] = []
 
   for (const document of chain) {
-    if (!document.parsed.ok) unresolved.push(unreadable(document, document.parsed.error))
+    if (document.parsed.ok) continue
+    unresolved.push(unreadable(document, document.parsed.error))
+    unreadableScopes.push(document.scope)
   }
 
   for (const section of ANALYZED_SECTIONS) {
@@ -68,5 +72,5 @@ export function analyzeOperationPolicy(
       }
     }
   }
-  return { operationId, rules, unresolved, droppedParents }
+  return { operationId, rules, unresolved, droppedParents, unreadable: unreadableScopes }
 }

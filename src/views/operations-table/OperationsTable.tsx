@@ -20,8 +20,15 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { ViewProps } from '../types'
 import { OperationDetails } from './OperationDetails'
-import { authText, NEEDS_ENTRA, outboundText } from '../shared/summaries'
-import { backendText, exportRow, operationRows, type OperationRow } from './rows'
+import { authText } from '../shared/summaries'
+import {
+  backendText,
+  callersUnknownText,
+  exportRow,
+  operationRows,
+  rowOutboundText,
+  type OperationRow,
+} from './rows'
 import { SeverityBadge } from '@/components/SeverityBadge'
 
 const features = tableFeatures({
@@ -55,7 +62,12 @@ const columns = column.columns([
     header: 'Auth',
     sortFn: 'alphanumeric',
     cell: (info) => (
-      <span className={cn(info.row.original.auth.kind === 'none' && 'text-destructive')}>
+      <span
+        className={cn(
+          info.row.original.auth.kind === 'none' && 'text-destructive',
+          info.row.original.auth.kind === 'unreadable' && 'text-muted-foreground',
+        )}
+      >
         {info.getValue()}
         {info.row.original.auth.kind === 'jwt' && (
           <span className="text-muted-foreground block text-xs">
@@ -71,7 +83,9 @@ const columns = column.columns([
     header: 'Callers',
     sortFn: 'basic',
     cell: (info) =>
-      info.row.original.callers ?? <span className="text-muted-foreground">{NEEDS_ENTRA}</span>,
+      info.row.original.callers ?? (
+        <span className="text-muted-foreground">{callersUnknownText(info.row.original)}</span>
+      ),
   }),
   column.accessor(backendText, {
     id: 'backend',
@@ -88,7 +102,7 @@ const columns = column.columns([
       </span>
     ),
   }),
-  column.accessor((row) => outboundText(row.outbound, row.entra), {
+  column.accessor(rowOutboundText, {
     id: 'outbound',
     header: 'Outbound auth',
     sortFn: 'alphanumeric',

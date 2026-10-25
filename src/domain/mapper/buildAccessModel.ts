@@ -21,7 +21,9 @@ export interface OperationAccess {
   readonly operation: Operation
   /** Undefined while the operation's policies load. */
   readonly policy: OperationPolicy | undefined
+  /** Undefined while loading, and when part of the policy is unreadable (`policy.unreadable`). */
   readonly backend: BackendBinding | undefined
+  /** Undefined while loading, and when part of the policy is unreadable (`policy.unreadable`). */
   readonly outbound: OutboundAuth | undefined
 }
 
@@ -88,6 +90,19 @@ export function buildAccessModel(inputs: AccessModelInputs): AccessModel {
   const access = operations.map((operation): OperationAccess => {
     const policy = policies.get(operation.id)
     if (!policy) return { operation, policy, backend: undefined, outbound: undefined }
+    if (policy.unreadable.length > 0) {
+      // Part of the policy is unknown, and any part can change who may call or where the call goes
+      // (a later set-backend-service, a validate-jwt, a dropped <base />). Conclude nothing: no
+      // service-URL fallback, no "no auth". Only the unreadable policy is reported.
+      collector.findings.push(
+        ...policy.unresolved.map((rule): Finding => ({
+          kind: 'unresolved-rule',
+          operationId: policy.operationId,
+          rule,
+        })),
+      )
+      return { operation, policy, backend: undefined, outbound: undefined }
+    }
     collector.findings.push(...policyFindings(policy))
     resolveInbound(context, policy)
     return { operation, policy, ...resolveOutbound(context, api, policy) }

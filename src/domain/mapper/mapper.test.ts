@@ -1,3 +1,4 @@
+import { HttpError } from '@/lib/http'
 import { apimServiceSchema, apiSchema, operationSchema } from '@/services/arm/schemas'
 import {
   AUDIENCE,
@@ -283,6 +284,81 @@ describe('buildAccessModel: ARM-only mode', () => {
       servicePrincipalIds: [],
       groupIds: [],
       identityPrincipalIds: [APIM_IDENTITY.principalId],
+    })
+  })
+})
+
+describe('buildAccessModel: a policy that could not be read', () => {
+  const failed = {
+    status: 'error' as const,
+    error: new HttpError('unexpected-status', 'arm', 'HTTP 500 (fictional)'),
+  }
+  const unresolvedReasons = (findings: readonly Finding[]) =>
+    findings.map((finding) =>
+      finding.kind === 'unresolved-rule' ? finding.rule.reason : finding.kind,
+    )
+
+  it('concludes nothing for an operation whose API policy failed to load', () => {
+    const model = buildAccessModel({ ...fixtureInputs(), apiPolicy: failed })
+    for (const access of model.operations) {
+      expect(access.policy?.unreadable).toEqual(['api'])
+      expect(access.backend).toBeUndefined()
+      expect(access.outbound).toBeUndefined()
+    }
+    // No service-URL fallback, no grants: nothing drawn from the policy.
+    expect(model.edges).toEqual([])
+    expect(model.backends.size).toBe(0)
+    // Not "no auth" or "no outbound auth": only that the policy couldn't be read.
+    expect(unresolvedReasons(model.findings)).toEqual([
+      'The api policy could not be read: it could not be loaded (unexpected-status)',
+      'The api policy could not be read: it could not be loaded (unexpected-status)',
+    ])
+    expect(model.problems.map((problem) => problem.what)).toEqual(['API policy'])
+    expect(model.pending).toEqual([])
+  })
+
+  it('keeps the other operations when one operation policy is forbidden', () => {
+    const inputs = fixtureInputs()
+    const model = buildAccessModel({
+      ...inputs,
+      operationPolicies: new Map([...inputs.operationPolicies, ['create-order', forbidden]]),
+    })
+    const [list, create] = model.operations
+    expect(list?.backend?.backendKey).toBe('backend:orders-backend')
+    expect(list?.outbound?.mechanism).toBe('ManagedIdentity')
+    expect(create?.policy?.unreadable).toEqual(['operation'])
+    expect(create?.backend).toBeUndefined()
+    expect(
+      model.edges.some((edge) => 'operationId' in edge && edge.operationId === 'create-order'),
+    ).toBe(false)
+    expect(
+      model.findings
+        .filter((f) => 'operationId' in f && f.operationId === 'create-order')
+        .map((f) => f.kind),
+    ).toEqual(['unresolved-rule'])
+  })
+
+  it('treats malformed XML the same way', () => {
+    const model = buildAccessModel({ ...fixtureInputs(), globalPolicy: ok('<policies><inbound>') })
+    expect(model.operations.every((access) => access.policy?.unreadable.includes('global'))).toBe(
+      true,
+    )
+    expect(model.edges).toEqual([])
+    expect(kinds(model.findings)).toEqual(['unresolved-rule', 'unresolved-rule'])
+  })
+
+  it('fetches nothing for the policy rules of an unreadable operation', () => {
+    const inputs = { ...fixtureInputs(), apiPolicy: failed }
+    const policies = effectivePolicies(
+      ['list-orders', 'create-order'],
+      inputs.globalPolicy,
+      inputs.apiPolicy,
+      inputs.operationPolicies,
+    )
+    expect(policyLookups(policies.values())).toEqual({
+      audiences: [],
+      backendIds: [],
+      resources: [],
     })
   })
 })

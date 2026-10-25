@@ -158,6 +158,7 @@ describe('analyzeOperationPolicy: the reference policy', () => {
       rules: [],
       unresolved: [],
       droppedParents: [],
+      unreadable: [],
     })
   })
 })

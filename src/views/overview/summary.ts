@@ -4,16 +4,23 @@ import { authSummary } from '../shared/summaries'
 
 /** The landing page's numbers: how operations are protected, and the findings by kind. Pure. */
 
-export type AuthCoverage = 'roles' | 'token-only' | 'none' | 'loading'
+export type AuthCoverage = 'roles' | 'token-only' | 'none' | 'unreadable' | 'loading'
 
 export const AUTH_COVERAGE_LABEL: Readonly<Record<AuthCoverage, string>> = {
   roles: 'Role required',
   'token-only': 'Token, no role',
   none: 'No auth',
+  unreadable: 'Policy unreadable',
   loading: 'Loading',
 }
 
-const AUTH_COVERAGE_ORDER: readonly AuthCoverage[] = ['roles', 'token-only', 'none', 'loading']
+const AUTH_COVERAGE_ORDER: readonly AuthCoverage[] = [
+  'roles',
+  'token-only',
+  'none',
+  'unreadable',
+  'loading',
+]
 
 export interface CoverageCount {
   readonly coverage: AuthCoverage

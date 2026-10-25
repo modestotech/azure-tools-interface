@@ -8,6 +8,7 @@ import {
   outboundText,
   worstSeverity,
   NEEDS_ENTRA,
+  unreadableText,
   type AuthSummary,
 } from '../shared/summaries'
 
@@ -24,7 +25,7 @@ export interface OperationRow {
   readonly auth: AuthSummary
   /**
    * Principals that can call: role holders other than groups, plus users in granting groups.
-   * Undefined in ARM-only mode, where who holds the roles isn't known.
+   * Undefined when unknown: in ARM-only mode, or when part of the policy couldn't be read.
    */
   readonly callers: number | undefined
   /** Whether Entra data was used (false in ARM-only mode). */
@@ -51,7 +52,10 @@ export function operationRows(model: AccessModel): OperationRow[] {
       path: operation.urlTemplate,
       name: operation.displayName,
       auth: authSummary(access),
-      callers: model.entra ? (callers.get(operation.id)?.size ?? 0) : undefined,
+      callers:
+        model.entra && !policy?.unreadable.length
+          ? (callers.get(operation.id)?.size ?? 0)
+          : undefined,
       entra: model.entra,
       backend: backend && model.backends.get(backend.backendKey),
       backendSource: backend && (backend.source?.scope ?? 'serviceUrl'),
@@ -64,7 +68,18 @@ export function operationRows(model: AccessModel): OperationRow[] {
 }
 
 export function backendText(row: OperationRow): string {
+  if (row.auth.kind === 'unreadable') return unreadableText(row.auth.scopes)
   return row.backend?.url ?? row.backend?.title ?? (row.backendSource ? 'unknown' : 'loading…')
+}
+
+/** Why `callers` is undefined: an unreadable policy, or ARM-only mode. */
+export function callersUnknownText(row: OperationRow): string {
+  return row.auth.kind === 'unreadable' ? 'unknown' : NEEDS_ENTRA
+}
+
+export function rowOutboundText(row: OperationRow): string {
+  if (row.auth.kind === 'unreadable') return unreadableText(row.auth.scopes)
+  return outboundText(row.outbound, row.entra)
 }
 
 /** The row as plain values, for CSV and JSON. */
@@ -75,10 +90,10 @@ export function exportRow(row: OperationRow): Record<string, string | number> {
     name: row.name,
     auth: authText(row.auth),
     authScope: row.auth.kind === 'jwt' ? row.auth.scopes.join(', ') : '',
-    callers: row.callers ?? NEEDS_ENTRA,
+    callers: row.callers ?? callersUnknownText(row),
     backend: backendText(row),
     backendSource: row.backendSource ?? '',
-    outboundAuth: outboundText(row.outbound, row.entra),
+    outboundAuth: rowOutboundText(row),
     needsReview: row.needsReview,
     findings: row.findings.map(findingText).join('; '),
   }
