@@ -70,53 +70,61 @@ export function nodeTitle(node: AccessNode): string {
   }
 }
 
-export function graphElements(model: AccessModel, expanded: ReadonlySet<string>): AccessGraph {
+/**
+ * The graph of the operations in `shown` (all of them when undefined): their role holders, the
+ * members of expanded groups among those, and their backends.
+ */
+export function graphElements(
+  model: AccessModel,
+  expanded: ReadonlySet<string>,
+  shown?: ReadonlySet<string>,
+): AccessGraph {
+  const isShown = (operationId: string) => !shown || shown.has(operationId)
+  const operations = model.operations.filter((access) => isShown(access.operation.id))
+  const outbound = new Map(operations.map((access) => [access.operation.id, access.outbound]))
   const edges: AccessGraphEdge[] = []
-  const memberCount = new Map<string, number>()
   const grantees = new Set<string>()
-  const members = new Set<string>()
-
   for (const edge of model.edges) {
-    switch (edge.kind) {
-      case 'grant':
-        grantees.add(edge.principalId)
-        edges.push({
-          id: `grant:${edge.principalId}:${edge.operationId}`,
-          kind: 'grant',
-          source: principalNodeId(edge.principalId),
-          target: operationNodeId(edge.operationId),
-          label: edge.roles.join(', '),
-          effective: true,
-        })
-        break
-      case 'membership':
-        memberCount.set(edge.groupId, (memberCount.get(edge.groupId) ?? 0) + 1)
-        if (!expanded.has(edge.groupId)) break
-        members.add(edge.memberId)
-        // Drawn member → group, so the graph reads left to right towards the operations.
-        edges.push({
-          id: `membership:${edge.groupId}:${edge.memberId}`,
-          kind: 'membership',
-          source: principalNodeId(edge.memberId),
-          target: principalNodeId(edge.groupId),
-          label: edge.effective ? undefined : 'not effective',
-          effective: edge.effective,
-        })
-        break
-      case 'route': {
-        const access = model.operations.find((item) => item.operation.id === edge.operationId)
-        const outbound = access?.outbound
-        edges.push({
-          id: `route:${edge.operationId}:${edge.backendKey}`,
-          kind: 'route',
-          source: operationNodeId(edge.operationId),
-          target: backendNodeId(edge.backendKey),
-          label:
-            outbound?.mechanism === 'ManagedIdentity' ? 'managed identity' : outboundText(outbound),
-          effective: true,
-        })
-        break
-      }
+    if (edge.kind !== 'grant' || !isShown(edge.operationId)) continue
+    grantees.add(edge.principalId)
+    edges.push({
+      id: `grant:${edge.principalId}:${edge.operationId}`,
+      kind: 'grant',
+      source: principalNodeId(edge.principalId),
+      target: operationNodeId(edge.operationId),
+      label: edge.roles.join(', '),
+      effective: true,
+    })
+  }
+
+  const memberCount = new Map<string, number>()
+  const members = new Set<string>()
+  const backendKeys = new Set<string>()
+  for (const edge of model.edges) {
+    if (edge.kind === 'membership' && grantees.has(edge.groupId)) {
+      memberCount.set(edge.groupId, (memberCount.get(edge.groupId) ?? 0) + 1)
+      if (!expanded.has(edge.groupId)) continue
+      members.add(edge.memberId)
+      // Drawn member → group, so the graph reads left to right towards the operations.
+      edges.push({
+        id: `membership:${edge.groupId}:${edge.memberId}`,
+        kind: 'membership',
+        source: principalNodeId(edge.memberId),
+        target: principalNodeId(edge.groupId),
+        label: edge.effective ? undefined : 'not effective',
+        effective: edge.effective,
+      })
+    } else if (edge.kind === 'route' && isShown(edge.operationId)) {
+      backendKeys.add(edge.backendKey)
+      const auth = outbound.get(edge.operationId)
+      edges.push({
+        id: `route:${edge.operationId}:${edge.backendKey}`,
+        kind: 'route',
+        source: operationNodeId(edge.operationId),
+        target: backendNodeId(edge.backendKey),
+        label: auth?.mechanism === 'ManagedIdentity' ? 'managed identity' : outboundText(auth),
+        effective: true,
+      })
     }
   }
 
@@ -130,17 +138,14 @@ export function graphElements(model: AccessModel, expanded: ReadonlySet<string>)
       members: principal.kind === 'group' ? (memberCount.get(principal.id) ?? 0) : undefined,
       expanded: expanded.has(principal.id),
     }))
-  const operationNodes = model.operations.map((access): AccessNode => ({
+  const operationNodes = operations.map((access): AccessNode => ({
     id: operationNodeId(access.operation.id),
     kind: 'operation',
     column: 2,
     access,
     severity: worstSeverity(operationFindings(model, access.operation.id)),
   }))
-  const backendKeys = [
-    ...new Set(model.edges.flatMap((edge) => (edge.kind === 'route' ? [edge.backendKey] : []))),
-  ]
-  const backendNodes = backendKeys.map((key): AccessNode => ({
+  const backendNodes = [...backendKeys].map((key): AccessNode => ({
     id: backendNodeId(key),
     kind: 'backend',
     column: 3,

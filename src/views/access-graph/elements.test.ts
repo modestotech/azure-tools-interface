@@ -44,6 +44,21 @@ describe('graphElements', () => {
   })
 })
 
+describe('graphElements with an operation filter', () => {
+  it('keeps only the shown operations, their role holders and their backends', () => {
+    const graph = graphElements(model(), new Set([ORDERS_READERS.id]), new Set(['create-order']))
+    expect(graph.nodes.filter((node) => node.kind === 'operation').map(nodeTitle)).toEqual([
+      'POST /orders',
+    ])
+    expect(graph.edges.every((edge) => !edge.id.includes('list-orders'))).toBe(true)
+    expect(graph.nodes.some((node) => node.kind === 'backend')).toBe(true)
+  })
+
+  it('draws nothing for a filter that matches no operation', () => {
+    expect(graphElements(model(), new Set(), new Set())).toEqual({ nodes: [], edges: [] })
+  })
+})
+
 describe('layoutGraph', () => {
   it('places each column to the right of the one before', async () => {
     const graph = graphElements(model(), new Set([ORDERS_READERS.id]))
