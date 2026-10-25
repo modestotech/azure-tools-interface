@@ -171,7 +171,8 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 
 **M8 — Hardening**
 - CORS check against real ARM/Graph (you run this, see §6). Add a Vite proxy only if needed, and document it in CLAUDE.md › Known gotchas.
-- Large-tenant performance pass. README.
+- Large-tenant performance pass (**done**): on a synthetic tenant of 300 operations, 1,300 role holders and 30 groups of 200 members (405,000 edges), building the model went from 0.9 s to 0.2 s, the operations table rows from 4.5 s to 0.2 s and the broad-access script from 3.9 s to 0.35 s (quadratic list copies, per-operation repeats in the mapper, linear lookups). The access graph draws at most 1,500 edges and has an operation filter. `largeTenantInputs()` (`test/fixtures/largeTenant.ts`) generates such a tenant; `domain/largeTenant.test.ts` checks the counts. Not changed: group members are still fetched for every granting group up front, since the findings need them.
+- README (**done**).
 - ~~CSP~~ done in M4: one definition (`security.config.ts`) emitted both as the `<meta>` tag in `index.html` and as `globalHeaders` in `staticwebapp.config.json`; `connect-src` limited to the ARM and Graph origins. `tests/security/build.test.ts` checks that the two match.
 
 ## 3. Key design decisions
@@ -205,10 +206,12 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 
 **Not needed up front — ARM/Graph JSON.** Public docs cover the response shapes, so fixtures are built from them. Real samples are only requested if the live smoke test shows a shape mismatch.
 
-**Later, at M8 — live checks:**
-- Confirm the §1 assumptions against the live APIM.
-- From the dev server, confirm whether ARM, Graph and Graph `$batch` calls pass CORS with a pasted token.
-- One real 401 and one real 403 response body.
+**Now, M8 — live checks** (you run these; I never see the tokens):
+1. `pnpm dev`, open the app, and paste fresh ARM and Graph tokens for a test tenant.
+2. **CORS:** pick a subscription, an APIM instance and an API. In the request log, ARM lines (subscriptions, services, APIs, policies) and Graph lines (service principals, `appRoleAssignedTo`, group members, and the `POST $batch` for service principal details) should end with a status, not `✗ network`. A `✗ network` line whose browser console shows a CORS error means that endpoint needs a Vite dev proxy: tell me which one.
+3. **§1 assumptions:** do the operations, callers, backends and outbound auth match what you know of the API? Anything in "needs manual review" that should be supported, or a finding that's wrong?
+4. **401 / 403:** paste an expired or wrong-audience token to get a 401, and use an account without access to one resource for a 403. From the browser's Network tab, save each response body to `samples-raw/` (gitignored). I'll anonymize them into fixtures.
+5. Try `pnpm build && pnpm preview` once, to see the CSP and headers in a production build.
 
 **Where to put any further samples**: drop raw files in `samples-raw/` (gitignored). I write anonymized copies to `src/test/fixtures/`; only those get committed.
 
