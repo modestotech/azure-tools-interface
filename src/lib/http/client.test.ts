@@ -1,6 +1,8 @@
 import { delay, http, HttpResponse } from 'msw'
 import { z } from 'zod'
+import { API_RESOURCES } from '@/lib/token'
 import { APIM_API_VERSION } from '@/services/arm/apiVersion'
+import { ARM_401_INVALID_TOKEN, GRAPH_401_INVALID_TOKEN } from '@/test/fixtures/errors'
 import { ARM, GRAPH } from '@/test/msw/handlers'
 import { server } from '@/test/msw/server'
 import { armToken, graphToken, TEST_SUB, TEST_TENANT } from '@/test/helpers/fakeJwt'
@@ -284,6 +286,31 @@ describe('createHttpClient', () => {
       expect(text).not.toContain(TEST_TENANT)
       expect(text).not.toContain(TEST_SUB)
     }
+  })
+
+  it.each([
+    ['arm', ARM_401_INVALID_TOKEN, 'InvalidAuthenticationToken: The access token is invalid.'],
+    [
+      'graph',
+      GRAPH_401_INVALID_TOKEN,
+      "InvalidAuthenticationToken: Protocol 'Bearer' failed to validate because The token could not be read.",
+    ],
+  ] as const)('reads a real %s 401 body into the message', async (api, body, detail) => {
+    const url = api === 'arm' ? `${ARM}/x` : `${GRAPH}/x`
+    server.use(http.get(url, () => HttpResponse.json(body, { status: 401 })))
+    const { client, log } = setup()
+    const error = await caught(client.getJson(api, url))
+    expect(error).toMatchObject({ kind: 'unauthorized', status: 401 })
+    expect(error.message).toContain('Token expired or wrong audience')
+    expect(error.message).toContain(`(${detail})`)
+    expect(error.azCommand).toContain(`--resource ${API_RESOURCES[api].resource}`)
+    // The export keeps the kind and status only, never Azure's text.
+    expect(exportableEntries(log.getState().entries)).toEqual([
+      expect.objectContaining({ errorKind: 'unauthorized', status: 401 }),
+    ])
+    expect(JSON.stringify(exportableEntries(log.getState().entries))).not.toContain(
+      'InvalidAuthenticationToken',
+    )
   })
 
   it.each([
