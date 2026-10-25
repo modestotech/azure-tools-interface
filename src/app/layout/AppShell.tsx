@@ -8,12 +8,19 @@ import { TokenScreen } from '../session/TokenScreen'
 import { AnalysisError } from './AnalysisError'
 import { DemoBanner } from './DemoBanner'
 import { LogDock } from './LogDock'
-import { uiStore, useUi } from './uiStore'
+import { SCRIPTS_PAGE_ID, uiStore, useUi } from './uiStore'
 
-/** Navigation generated from the view registry, with the landing page first. */
+/**
+ * Navigation: the landing page, every view from the registry, then the scripts page. The script
+ * registry isn't read here: scripts import the domain, which stays out of the first page load.
+ */
 function Nav() {
   const active = useUi((state) => state.activeViewId)
-  const items = [{ id: undefined, title: 'Overview' }, ...views]
+  const items = [
+    { id: undefined, title: 'Overview' },
+    ...views,
+    { id: SCRIPTS_PAGE_ID, title: 'Scripts' },
+  ]
   return (
     <nav aria-label="Views" className="flex flex-wrap gap-1 border-b">
       {items.map((item) => (
@@ -41,11 +48,12 @@ function Nav() {
 /** The analysis, with the parser and mapper, loads only once an API is chosen. */
 const Analysis = lazy(() => import('./Analysis'))
 
-/** The analysis; if it fails, the error stays here and clears when the API or view changes. */
+/** The analysis; if it fails, the error stays here and clears when the API, view or script changes. */
 function Content() {
   const service = useSelection((state) => state.service)
   const api = useSelection((state) => state.api)
   const viewId = useUi((state) => state.activeViewId)
+  const scriptId = useUi((state) => state.activeScriptId)
   if (!api) {
     return (
       <p className="text-muted-foreground text-sm">
@@ -54,7 +62,7 @@ function Content() {
     )
   }
   return (
-    <ErrorBoundary fallback={AnalysisError} resetKeys={[service, api, viewId]}>
+    <ErrorBoundary fallback={AnalysisError} resetKeys={[service, api, viewId, scriptId]}>
       <Suspense fallback={<p className="text-muted-foreground text-sm">Loading the analysis…</p>}>
         <Analysis />
       </Suspense>

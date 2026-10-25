@@ -1,12 +1,14 @@
 import { Suspense } from 'react'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { AccessModel } from '@/domain'
+import { scripts } from '@/scripts/registry'
+import { defaultParams } from '@/scripts/types'
 import { OverviewCharts } from '@/views/overview'
 import { views } from '@/views/registry'
 import { AnalysisStatus } from '../scope/AnalysisStatus'
 import { uiStore } from './uiStore'
 
-/** The landing page: what the analysis found so far, and the views to open. */
+/** The landing page: what the analysis found so far, and the views and scripts to open. */
 export function Landing({ model }: { model: AccessModel | undefined }) {
   return (
     <div className="space-y-4">
@@ -40,6 +42,36 @@ export function Landing({ model }: { model: AccessModel | undefined }) {
             </button>
           ))}
         </div>
+      )}
+      {scripts.length > 0 && (
+        <section aria-label="Scripts" className="space-y-2">
+          <h2 className="text-sm font-medium">Scripts</h2>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {scripts.map((script) => (
+              <li key={script.id}>
+                <button
+                  type="button"
+                  className="hover:bg-accent flex w-full items-start gap-2 rounded-md border px-3 py-2 text-left text-sm"
+                  onClick={() => {
+                    uiStore.getState().openScript(script.id)
+                  }}
+                >
+                  <span className="flex-1">
+                    <span className="block font-medium">{script.title}</span>
+                    <span className="text-muted-foreground block text-xs">
+                      {script.description}
+                    </span>
+                  </span>
+                  {model && (
+                    <span className="text-muted-foreground shrink-0 text-xs">
+                      {script.run(model, defaultParams(script)).rows.length} found
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   )
