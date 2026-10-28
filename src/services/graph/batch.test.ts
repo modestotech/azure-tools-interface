@@ -1,6 +1,11 @@
+import { http, HttpResponse } from 'msw'
 import { z } from 'zod'
+import { GRAPH_BATCH_URL } from '@/lib/http'
 import { REPORTING_MI_SP, WEBSHOP_SP } from '@/test/fixtures/graph'
 import { testClient } from '@/test/helpers/testClient'
+import { resolveGraph } from '@/test/msw/graph'
+import { GRAPH } from '@/test/msw/handlers'
+import { server } from '@/test/msw/server'
 import { getServicePrincipalsByIds, subResponseResult } from './batch'
 
 const UNKNOWN_GUID = '00000000-0000-0000-0000-000000000999'
@@ -36,6 +41,37 @@ describe('getServicePrincipalsByIds', () => {
     const result = await getServicePrincipalsByIds(client, ids)
     expect(result.status === 'ok' && result.data.size).toBe(25)
     expect(log.getState().entries).toHaveLength(2)
+  })
+
+  it('keeps the results of the other POSTs when one POST fails', async () => {
+    // A full chunk of 20 fails with a 500; the last 5 lookups go in a POST of their own.
+    server.use(
+      http.post(GRAPH_BATCH_URL, async ({ request }) => {
+        const { requests } = (await request.json()) as { requests: { id: string; url: string }[] }
+        if (requests.length === 20) {
+          return HttpResponse.json({ error: { code: 'InternalServerError' } }, { status: 500 })
+        }
+        return HttpResponse.json({
+          responses: requests.map(({ id, url }) => ({
+            id,
+            ...resolveGraph(new URL(`${GRAPH}${url}`)),
+          })),
+        })
+      }),
+    )
+    const { client } = testClient()
+    const ids = Array.from({ length: 25 }, (_, i) => guid(i))
+    const result = await getServicePrincipalsByIds(client, ids)
+    if (result.status !== 'ok') throw new Error(`expected ok, got ${result.status}`)
+
+    expect(result.data.size).toBe(25)
+    for (const id of ids.slice(0, 20)) {
+      expect(result.data.get(id)).toMatchObject({
+        status: 'error',
+        error: { kind: 'unexpected-status', status: 500 },
+      })
+    }
+    for (const id of ids.slice(20)) expect(result.data.get(id)).toEqual({ status: 'empty' })
   })
 
   it('sends nothing for no IDs, and refuses the whole batch if one ID is invalid', async () => {
