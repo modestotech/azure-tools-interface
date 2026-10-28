@@ -53,7 +53,8 @@ async function choose(user: ReturnType<typeof userEvent.setup>, label: string, o
   await user.click(await screen.findByRole('option', { name: option }))
 }
 
-describe('requests on the wire', () => {
+// A whole run chains several waits (three pickers, then the analysis), each up to the default.
+describe('requests on the wire', { timeout: 15_000 }, () => {
   it('are only GETs, and $batch POSTs of GETs, through a whole analysis', async () => {
     const { seen, settled } = recordRequests()
     sessionStore.getState().setToken('arm', armToken())
@@ -68,12 +69,9 @@ describe('requests on the wire', () => {
     await choose(user, 'Subscription', /^Contoso Integration/)
     await choose(user, 'APIM instance', /^apim-contoso/)
     await choose(user, 'API', /^Orders API/)
-    await waitFor(
-      () => {
-        expect(screen.getByText(/· done/)).toBeInTheDocument()
-      },
-      { timeout: 3000 },
-    )
+    await waitFor(() => {
+      expect(screen.getByText(/· done/)).toBeInTheDocument()
+    })
     await settled()
 
     expect(seen.length).toBeGreaterThan(10)
@@ -107,12 +105,9 @@ describe('requests on the wire', () => {
     await choose(user, 'Subscription', /^Contoso Integration/)
     await choose(user, 'APIM instance', /^apim-contoso/)
     await choose(user, 'API', /^Orders API/)
-    await waitFor(
-      () => {
-        expect(screen.getByText(/ARM only \(callers need Entra\).*· done/)).toBeInTheDocument()
-      },
-      { timeout: 3000 },
-    )
+    await waitFor(() => {
+      expect(screen.getByText(/ARM only \(callers need Entra\).*· done/)).toBeInTheDocument()
+    })
     await settled()
 
     expect(seen.length).toBeGreaterThan(5)

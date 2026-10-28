@@ -1,7 +1,14 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 
 /** Extra setup for the jsdom project: DOM matchers and unmounting rendered components. */
+
+/*
+ * findBy* and waitFor give up after 1 s by default. Under a full parallel run, elkjs layout (on
+ * the main thread) and the first MSW round trips can take longer, which made tests flaky. This
+ * stays below Vitest's 5 s test timeout, so a missing element still fails with the DOM dump.
+ */
+configure({ asyncUtilTimeout: 4000 })
 
 /*
  * Browser APIs jsdom lacks, used by Radix Popover (positioning) and cmdk (keeping the active item
