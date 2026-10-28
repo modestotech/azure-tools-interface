@@ -11,7 +11,7 @@ async function fillDemoTokens(): Promise<void> {
   session.setToken('graph', graphToken())
 }
 
-/** Shown in `pnpm dev:demo` only, where MSW serves fictional data. */
+/** Shown in demo builds only (`pnpm dev:demo`, the Pages demo), where MSW serves fictional data. */
 export function DemoBanner() {
   if (import.meta.env.MODE !== 'demo') return null
   return (

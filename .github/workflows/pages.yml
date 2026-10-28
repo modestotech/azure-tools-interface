@@ -1,6 +1,7 @@
-# Builds the production site and deploys it to GitHub Pages. The checks run first, so a red
-# commit is never deployed. Pages can't set response headers: the CSP comes from the <meta> tag the
-# build puts in index.html (without frame-ancestors), and staticwebapp.config.json is ignored.
+# Builds the production site, with the demo under /demo/, and deploys both to GitHub Pages. The
+# checks run first, so a red commit is never deployed. Pages can't set response headers: the CSP
+# comes from the <meta> tag the build puts in index.html (without frame-ancestors), and
+# staticwebapp.config.json is ignored.
 name: Deploy to GitHub Pages
 
 on:
@@ -39,9 +40,17 @@ jobs:
       - id: pages
         uses: actions/configure-pages@v6
 
-      # A project site is served from /<repo>/, so assets need that base path. Only this build gets
-      # it: `pnpm build` and the security tests keep the default `/`.
+      # A project site is served from /<repo>/, so assets need that base path. Only these builds
+      # get it: `pnpm build` and the security tests keep the default `/`.
       - run: pnpm exec vite build --base "${{ steps.pages.outputs.base_path }}/"
+        env:
+          VITE_DEMO_URL: ${{ steps.pages.outputs.base_path }}/demo/
+
+      # The demo (fictional data served by MSW) in its own folder. Its service worker only
+      # controls pages under /demo/, never the real app above it.
+      - run: >-
+          pnpm exec vite build --mode demo --outDir dist/demo
+          --base "${{ steps.pages.outputs.base_path }}/demo/"
 
       - uses: actions/upload-pages-artifact@v5
         with:
