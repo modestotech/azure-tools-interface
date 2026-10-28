@@ -27,6 +27,7 @@ export type Finding =
   | { readonly kind: 'http-backend'; readonly operationId: string; readonly backendKey: string }
   | { readonly kind: 'no-outbound-auth'; readonly operationId: string }
   | { readonly kind: 'identity-not-found'; readonly operationId: string; readonly clientId: string }
+  | { readonly kind: 'no-system-identity'; readonly operationId: string }
   | { readonly kind: 'resource-not-found'; readonly operationId: string; readonly resource: string }
   | {
       readonly kind: 'identity-has-no-role'
@@ -82,6 +83,11 @@ export const FINDING_INFO: Readonly<Record<FindingKind, { severity: Severity; ti
   'identity-not-found': {
     severity: 'high',
     title: "client-id doesn't match any of the APIM service's user-assigned identities",
+  },
+  'no-system-identity': {
+    severity: 'high',
+    title:
+      'authentication-managed-identity has no client-id, and the APIM service has no system-assigned identity',
   },
   'resource-not-found': {
     severity: 'medium',

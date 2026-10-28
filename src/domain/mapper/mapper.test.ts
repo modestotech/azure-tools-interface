@@ -212,6 +212,35 @@ describe('buildAccessModel: findings', () => {
   })
 })
 
+describe('buildAccessModel: managed identity without client-id', () => {
+  const SYSTEM_IDENTITY_API_POLICY = `<policies>
+  <inbound>
+    <base />
+    <authentication-managed-identity resource="${RESOURCE}" />
+  </inbound>
+  <backend><base /></backend>
+</policies>`
+
+  const withService = (identity: unknown) =>
+    buildAccessModel({
+      ...fixtureInputs(),
+      apiPolicy: ok(SYSTEM_IDENTITY_API_POLICY),
+      service: ok(apimServiceSchema.parse({ ...armFixtures.services[0], identity })),
+    })
+
+  it("uses the service's system-assigned identity", () => {
+    const model = withService({ type: 'SystemAssigned', principalId: 'system-principal' })
+    expect(model.operations[0]?.outbound).toMatchObject({ principalId: 'system-principal' })
+    expect(kinds(model.findings)).not.toContain('no-system-identity')
+  })
+
+  it('flags a service with no system-assigned identity', () => {
+    const model = withService(undefined)
+    expect(model.operations[0]?.outbound).toMatchObject({ principalId: undefined })
+    expect(kinds(model.findings)).toContain('no-system-identity')
+  })
+})
+
 describe('meetsClaim', () => {
   const held = new Set(['A', 'B'])
 

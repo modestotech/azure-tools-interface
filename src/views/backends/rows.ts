@@ -13,6 +13,7 @@ const BACKEND_FINDINGS: ReadonlySet<FindingKind> = new Set([
   'http-backend',
   'no-outbound-auth',
   'identity-not-found',
+  'no-system-identity',
   'resource-not-found',
   'identity-has-no-role',
 ])

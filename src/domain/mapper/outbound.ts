@@ -72,7 +72,11 @@ function identityPrincipalId(
 ): string | undefined {
   const service = read(context.collector, 'APIM service', context.inputs.service)
   if (!service) return undefined
-  if (clientId === undefined) return service.identity?.systemAssignedPrincipalId
+  if (clientId === undefined) {
+    const principalId = service.identity?.systemAssignedPrincipalId
+    if (!principalId) context.collector.findings.push({ kind: 'no-system-identity', operationId })
+    return principalId
+  }
   const match = service.identity?.userAssigned.find(
     (identity) => identity.clientId.toLowerCase() === clientId.toLowerCase(),
   )
