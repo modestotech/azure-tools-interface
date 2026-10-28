@@ -38,6 +38,11 @@ export interface HttpClientConfig {
    * queued doesn't count. Default 30 s.
    */
   requestTimeoutMs?: number
+  /**
+   * Most pages `getAllPages` follows before giving up, as a guard against a `nextLink` that never
+   * ends. Default 1000.
+   */
+  maxPages?: number
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
 }
 
@@ -101,7 +106,7 @@ export interface HttpClient {
   reset(): void
 }
 
-const MAX_PAGES = 1000
+const DEFAULT_MAX_PAGES = 1000
 
 /** Accepts any JSON; used when the caller passes no schema. */
 const ANY_JSON = z.unknown()
@@ -274,6 +279,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
   const sleep = config.sleep ?? defaultSleep
   const maxRetries = config.maxRetries ?? 3
   const requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  const maxPages = config.maxPages ?? DEFAULT_MAX_PAGES
   const limiter = createLimiter(config.maxConcurrency ?? 8)
   const { logger } = config
 
@@ -450,6 +456,29 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
   }
 
   /**
+   * `getAllPages` gave up: the collection at `url` still had a next page after `maxPages`. Logged
+   * as an error line for the page that wasn't fetched, so the log shows why the caller failed.
+   */
+  function pagingStopped(api: ApiKind, url: string, next: string): HttpError {
+    const maskedUrl = mask(url)
+    const error = new HttpError(
+      'invalid-response',
+      api,
+      `Gave up on ${maskedUrl} after ${String(maxPages)} pages: the response still points to a next page. Either the server keeps returning a nextLink, or the collection is far larger than this app expects.`,
+      { url: maskedUrl },
+    )
+    const id = logger.start({
+      api,
+      method: 'GET',
+      url: mask(next),
+      rawUrl: next,
+      label: 'paging stopped',
+    })
+    logger.finish(id, { state: 'error', error: error.message, errorKind: error.kind })
+    return error
+  }
+
+  /**
    * Decides how a received response ends: an expected 404, a typed HTTP error, invalid JSON, a
    * schema mismatch, or validated data. No I/O.
    */
@@ -569,9 +598,7 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     const items: T[] = []
     let next: string | null | undefined = url
     for (let page = 0; next; page++) {
-      if (page >= MAX_PAGES) {
-        throw new HttpError('invalid-response', api, `Stopped after ${String(MAX_PAGES)} pages.`)
-      }
+      if (page >= maxPages) throw pagingStopped(api, url, next)
       const json: z.output<typeof pageSchema> = await getJson(api, next, {
         ...options,
         schema: pageSchema,
