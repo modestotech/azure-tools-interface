@@ -8,6 +8,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useEffect, useMemo, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { AccessModel } from '@/domain'
 import { ArmOnlyNote } from '../shared/ArmOnlyNote'
@@ -47,21 +48,38 @@ const colorMode = (): ColorMode =>
 
 /**
  * Positions for a graph, computed by elkjs off the render path. Stale ones stay until it's done.
- * No graph (too large to draw) lays out nothing.
+ * No graph (too large to draw) lays out nothing. If elkjs fails, `failed` is true for that graph
+ * until `retry()` starts a new attempt.
  */
 function useLayout(graph: Graph | undefined) {
   const [layout, setLayout] = useState<{ graph: Graph; positions: Map<string, Position> }>()
+  const [failedGraph, setFailedGraph] = useState<Graph>()
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     if (!graph) return
     let current = true
-    void layoutGraph(graph).then((positions) => {
-      if (current) setLayout({ graph, positions })
-    })
+    layoutGraph(graph).then(
+      (positions) => {
+        if (current) setLayout({ graph, positions })
+      },
+      () => {
+        if (current) setFailedGraph(graph)
+      },
+    )
     return () => {
       current = false
     }
-  }, [graph])
-  return { positions: layout?.positions, laidOut: layout?.graph === graph }
+  }, [graph, attempt])
+  const retry = () => {
+    setFailedGraph(undefined)
+    setAttempt((n) => n + 1)
+  }
+  return {
+    positions: layout?.positions,
+    laidOut: layout?.graph === graph,
+    failed: graph !== undefined && failedGraph === graph,
+    retry,
+  }
 }
 
 const INEFFECTIVE = { className: 'opacity-40', style: { strokeDasharray: '4 4' } }
@@ -85,7 +103,7 @@ export default function AccessGraph({ model }: ViewProps) {
   const shown = useMemo(() => shownOperations(model, filter), [model, filter])
   const graph = useMemo(() => graphElements(model, expanded, shown), [model, expanded, shown])
   const tooLarge = graph.edges.length > MAX_DRAWN_EDGES
-  const { positions, laidOut } = useLayout(tooLarge ? undefined : graph)
+  const { positions, laidOut, failed, retry } = useLayout(tooLarge ? undefined : graph)
 
   const nodes = useMemo((): FlowNode[] => {
     const onToggleGroup = (groupId: string) => {
@@ -130,7 +148,7 @@ export default function AccessGraph({ model }: ViewProps) {
         <p className="text-muted-foreground text-sm">
           {graph.nodes.length} nodes, {graph.edges.length} edges. Select a node for details; groups
           show their direct members on request. Dashed edges are memberships that give no access.
-          {(model.pending.length > 0 || (!tooLarge && !laidOut)) && ' · loading…'}
+          {(model.pending.length > 0 || (!tooLarge && !laidOut && !failed)) && ' · loading…'}
         </p>
       </div>
       <div className="h-[60vh] rounded-md border" data-testid="access-graph">
@@ -140,6 +158,17 @@ export default function AccessGraph({ model }: ViewProps) {
             the operations, or collapse groups, to draw a part of the graph. The Operations and
             Principals views show everything.
           </p>
+        ) : failed ? (
+          <div className="space-y-2 p-3 text-sm" role="alert">
+            <p>
+              The graph layout failed, so it can't be drawn. Try again; if it keeps failing, filter
+              the operations to draw a smaller part. The Operations and Principals views don't need
+              the layout.
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={retry}>
+              Try again
+            </Button>
+          </div>
         ) : positions ? (
           <ReactFlow
             // Remounted when the filter changes, so the view fits the new graph.
