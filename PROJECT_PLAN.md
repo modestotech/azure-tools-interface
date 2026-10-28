@@ -178,6 +178,14 @@ The goal is **one company's APIM pattern**, not every possible APIM setup. The r
 - From the live check (**done**): the pickers search by substring with `*` as a wildcard ("02" finds "APIM0002"). A policy that fails to load or parse now makes the operation's policy unknown, instead of falling back to the API's service URL and reporting "no auth" or "no credentials".
 - ~~CSP~~ done in M4: one definition (`security.config.ts`) emitted both as the `<meta>` tag in `index.html` and as `globalHeaders` in `staticwebapp.config.json`; `connect-src` limited to the ARM and Graph origins. `tests/security/build.test.ts` checks that the two match.
 
+**M9 — Review fixes** (done; one finding left open)
+A systematic review for missing error handling, unclear messages, unhandled edge cases, undocumented complex code and hard-coded values found ten issues. Nine are fixed, one commit each:
+- Error handling: the access graph says when the elkjs layout fails and offers "Try again" instead of "Laying out…" for good. The copy button says when the browser blocks the clipboard. A `$batch` POST that fails no longer discards the other POSTs' results (`loadBatch` settles each chunk of 20 on its own).
+- Messages: when paging stops at the page limit, the error names the URL, says why it stopped, and the request log gets an error line for it (the limit is `HttpClientConfig.maxPages`). A 401 inside `$batch` gets the same "re-run the az command" message and `azCommand` as a plain 401 (`HttpClient.azCommand`). An invalid script parameter says what's wrong and which value the result still uses.
+- Edge cases: two new findings, `no-audience` (a `validate-jwt` without `<audiences>` accepts tokens for any app) and `no-system-identity` (`authentication-managed-identity` without `client-id` on a service with no system-assigned identity).
+- Documentation: the limiter explains how slots are handed over and how a waiter leaves the queue, and guards the abort path.
+- Open: endpoints are fixed to Azure's public cloud (`lib/token/resources.ts`, the CSP and `ALLOWED_ORIGINS`), so Azure Government and Azure China tenants can't be analyzed. Supporting them means choosing a cloud at build time and deriving all three from it. Deferred until such a tenant is in scope.
+
 ## 3. Key design decisions
 
 - **Request log is a side effect of `lib/http`**. Views and services never log manually, so new views get logging for free.
