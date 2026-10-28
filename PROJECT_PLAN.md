@@ -191,7 +191,8 @@ A systematic review for missing error handling, unclear messages, unhandled edge
 - The site is a project page under `/<repo>/`, so the workflow builds with Vite's `--base` from `actions/configure-pages`. `pnpm build` and the security tests keep the default `/` for Azure Static Web Apps and Storage.
 - Pages can't set response headers. As on a Storage static website, the CSP comes from the `<meta>` tag alone (no `frame-ancestors`), and `staticwebapp.config.json` is ignored. The app has no client-side routes, so no `404.html` fallback is needed.
 - The deployed site is the production build: it needs real tokens and has no demo mode.
-- Left to do: set the repository's Pages source to "GitHub Actions" (Settings › Pages), then check the first deployment and a live run against ARM from the Pages origin.
+- HTTPS only: users paste tokens into the page, and a page served over HTTP can be altered in transit (its CSP `<meta>` tag stripped, a script injected). The default `github.io` address always enforces HTTPS; with a custom domain, tick "Enforce HTTPS" in Settings › Pages as soon as the certificate is issued.
+- Pages source set to "GitHub Actions" (**done**). Left to do: check the first deployment and a live run against ARM from the Pages origin.
 
 ## 3. Key design decisions
 
