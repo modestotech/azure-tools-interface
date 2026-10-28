@@ -16,6 +16,7 @@ export type Finding =
       readonly operationId: string
       readonly rule: UnresolvedRule
     }
+  | { readonly kind: 'no-audience'; readonly operationId: string }
   | { readonly kind: 'audience-not-found'; readonly operationId: string; readonly audience: string }
   | { readonly kind: 'no-role-requirement'; readonly operationId: string }
   | { readonly kind: 'unknown-role'; readonly operationId: string; readonly role: string }
@@ -46,6 +47,10 @@ export const FINDING_INFO: Readonly<Record<FindingKind, { severity: Severity; ti
   'unresolved-rule': {
     severity: 'medium',
     title: 'Needs manual review: outside the supported pattern',
+  },
+  'no-audience': {
+    severity: 'high',
+    title: 'validate-jwt checks no audience: a token issued for any app is accepted',
   },
   'audience-not-found': {
     severity: 'high',

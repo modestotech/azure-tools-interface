@@ -173,6 +173,21 @@ describe('buildAccessModel: findings', () => {
     )
   })
 
+  it('flags a validate-jwt that checks no audience, in both modes', () => {
+    const noAudience = `<policies>
+  <inbound>
+    <validate-jwt header-name="Authorization">
+      <required-claims>
+        <claim name="roles" match="any"><value>Orders.Read</value></claim>
+      </required-claims>
+    </validate-jwt>
+  </inbound>
+  <backend><base /></backend>
+</policies>`
+    expect(findingKinds({ apiPolicy: ok(noAudience) })).toContain('no-audience')
+    expect(findingKinds({ apiPolicy: ok(noAudience), entra: false })).toContain('no-audience')
+  })
+
   it("flags a required role the API doesn't define", () => {
     const readOnly = { ...ORDERS_API_SP, appRoles: ORDERS_API_SP.appRoles.slice(0, 1) }
     expect(findingKinds({ audiences: new Map([[AUDIENCE, ok([sp(readOnly)])]]) })).toContain(
