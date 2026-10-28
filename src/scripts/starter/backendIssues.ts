@@ -9,6 +9,7 @@ const BACKEND_KINDS: ReadonlySet<FindingKind> = new Set([
   'no-backend-url',
   'backend-not-found',
   'identity-not-found',
+  'no-system-identity',
   'resource-not-found',
   'identity-has-no-role',
 ])

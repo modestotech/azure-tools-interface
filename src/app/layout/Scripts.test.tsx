@@ -41,6 +41,25 @@ describe('Scripts', () => {
     expect(within(region).getByText('Nothing found.')).toBeInTheDocument()
   })
 
+  it('says when a parameter is invalid, and keeps the last valid value', async () => {
+    uiStore.getState().openScript('broad-access')
+    const user = renderScripts()
+    const region = screen.getByRole('region', {
+      name: 'Principals with access to more than N operations',
+    })
+    const n = within(region).getByLabelText('More than N operations')
+    await user.clear(n)
+    expect(n).toHaveAttribute('aria-invalid', 'true')
+    expect(n).toHaveAccessibleDescription('Enter a number. The result uses 1.')
+    await user.type(n, '-1')
+    expect(n).toHaveAccessibleDescription('Enter a number of at least 0. The result uses 1.')
+    expect(bodyRows(region)).toHaveLength(3)
+    await user.clear(n)
+    await user.type(n, '2')
+    expect(n).toHaveAttribute('aria-invalid', 'false')
+    expect(within(region).getByText('Nothing found.')).toBeInTheDocument()
+  })
+
   it('shows the result as a sortable table', async () => {
     uiStore.getState().openScript('ineffective-members')
     const user = renderScripts()

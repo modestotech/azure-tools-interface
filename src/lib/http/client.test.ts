@@ -97,6 +97,25 @@ describe('createHttpClient', () => {
     expect(log.getState().entries).toHaveLength(4)
   })
 
+  it('gives up on a nextLink that never ends, saying where and why, and logs it', async () => {
+    server.use(
+      http.get(`${ARM}/subscriptions/:sub/loop`, () =>
+        HttpResponse.json({ value: [1], nextLink: `${ARM}/subscriptions/${TEST_SUB}/loop` }),
+      ),
+    )
+    const { client, log } = setup({ maxPages: 3 })
+    const error = await caught(client.getAllPages('arm', `${ARM}/subscriptions/${TEST_SUB}/loop`))
+    expect(error).toMatchObject({
+      kind: 'invalid-response',
+      url: `${ARM}/subscriptions/{sub}/loop`,
+    })
+    expect(error.message).toMatch(/after 3 pages: the response still points to a next page/)
+    expect(error.message).not.toContain(TEST_SUB)
+    const entries = log.getState().entries
+    expect(entries.map((entry) => entry.state)).toEqual(['ok', 'ok', 'ok', 'error'])
+    expect(entries[3]).toMatchObject({ label: 'paging stopped', errorKind: 'invalid-response' })
+  })
+
   it('refuses a nextLink pointing to another host', async () => {
     server.use(
       http.get(`${ARM}/list`, () =>
@@ -286,6 +305,12 @@ describe('createHttpClient', () => {
       expect(text).not.toContain(TEST_TENANT)
       expect(text).not.toContain(TEST_SUB)
     }
+  })
+
+  it('gives the az command for the current tenant, for errors it does not throw itself', () => {
+    expect(setup().client.azCommand('graph')).toBe(
+      `az account get-access-token --resource https://graph.microsoft.com --tenant ${TEST_TENANT} --query accessToken -o tsv`,
+    )
   })
 
   it.each([

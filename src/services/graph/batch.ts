@@ -1,13 +1,19 @@
 import type { z } from 'zod'
-import { HttpError, type BatchResponse, type HttpClient, type HttpErrorKind } from '@/lib/http'
-import { settle, type ResourceResult } from '../result'
+import {
+  GRAPH_BATCH_MAX,
+  HttpError,
+  type BatchResponse,
+  type HttpClient,
+  type HttpErrorKind,
+} from '@/lib/http'
+import { resultFromError, settle, type ResourceResult } from '../result'
 import type { LoadOptions } from './entra'
 import { servicePrincipalSchema, type GraphServicePrincipal } from './schemas'
 import { graphPaths, graphUrl } from './urls'
 
 /**
- * Bulk Graph lookups through `$batch` (the client chunks them by 20). The batch as a whole settles
- * like any other resource; inside it, each lookup has its own ResourceResult.
+ * Bulk Graph lookups through `$batch`, one POST per 20 lookups. Each lookup has its own
+ * ResourceResult; a POST that fails gives its own lookups an error and leaves the others alone.
  */
 
 export type BatchResults<T> = ReadonlyMap<string, ResourceResult<T>>
@@ -30,11 +36,13 @@ function errorCode(body: unknown): string | undefined {
 /**
  * One sub-response as a ResourceResult: 2xx is validated with `schema`, 404 is `empty`, 403 is
  * `forbidden`, anything else is an `error`. Messages carry the status and Graph's error code only.
+ * A 401 gets the same "re-run the az command" message as a plain request, with `azCommand`.
  */
 export function subResponseResult<T>(
   response: BatchResponse,
   url: string,
   schema: z.ZodType<T>,
+  azCommand?: string,
 ): ResourceResult<T> {
   const { status, body } = response
   if (status === 404) return { status: 'empty' }
@@ -48,12 +56,48 @@ export function subResponseResult<T>(
     }
   }
   const code = errorCode(body)
-  const message = `Graph answered ${String(status)}${code ? ` (${code})` : ''} for ${url}.`
-  const error = new HttpError(kindForStatus(status), 'graph', message, { status, url })
+  const answered = `Graph answered ${String(status)}${code ? ` (${code})` : ''} for ${url}.`
+  const message =
+    status === 401
+      ? `Token expired or wrong audience — re-run the az command to get a new Graph token. (${answered})`
+      : answered
+  const error = new HttpError(kindForStatus(status), 'graph', message, {
+    status,
+    url,
+    azCommand: status === 401 ? azCommand : undefined,
+  })
   return status === 403 ? { status: 'forbidden', error } : { status: 'error', error }
 }
 
-/** GETs one Graph path per key through `$batch`, keeping each key's result. Throws if the batch fails. */
+/** One chunk's keys, with each key's result: from its sub-response, or the chunk's own failure. */
+async function loadChunk<T>(
+  client: HttpClient,
+  chunk: readonly (readonly [string, string])[],
+  schema: z.ZodType<T>,
+  options: LoadOptions,
+): Promise<[string, ResourceResult<T>][]> {
+  const requests = chunk.map(([, url], index) => ({ id: String(index), url }))
+  let responses: BatchResponse[]
+  try {
+    // The client returns exactly one response per request, in request order.
+    responses = await client.batch(requests, options)
+  } catch (error) {
+    // The POST itself failed (network, 500, timeout): every key in it shares that result. A cancel
+    // or a bug isn't an HttpError and is rethrown by resultFromError.
+    const failed = resultFromError(error)
+    return chunk.map(([key]) => [key, failed])
+  }
+  return chunk.map(([key, path], index) => {
+    const response = responses[index]
+    if (!response) throw new Error(`Unreachable: no $batch response for ${key}`)
+    return [key, subResponseResult(response, graphUrl(path), schema, client.azCommand('graph'))]
+  })
+}
+
+/**
+ * GETs one Graph path per key through `$batch`, keeping each key's result. Each POST of up to
+ * `GRAPH_BATCH_MAX` lookups settles on its own, so one failed POST doesn't discard the others.
+ */
 async function loadBatch<T>(
   client: HttpClient,
   paths: ReadonlyMap<string, string>,
@@ -61,17 +105,14 @@ async function loadBatch<T>(
   options: LoadOptions,
 ): Promise<BatchResults<T>> {
   const entries = [...paths]
-  if (entries.length === 0) return new Map()
-  const requests = entries.map(([, url], index) => ({ id: String(index), url }))
-  // The client returns exactly one response per request, in request order.
-  const responses = await client.batch(requests, options)
-  return new Map(
-    entries.map(([key, path], index) => {
-      const response = responses[index]
-      if (!response) throw new Error(`Unreachable: no $batch response for ${key}`)
-      return [key, subResponseResult(response, graphUrl(path), schema)]
-    }),
+  const chunks: (readonly [string, string])[][] = []
+  for (let i = 0; i < entries.length; i += GRAPH_BATCH_MAX) {
+    chunks.push(entries.slice(i, i + GRAPH_BATCH_MAX))
+  }
+  const settled = await Promise.all(
+    chunks.map((chunk) => loadChunk(client, chunk, schema, options)),
   )
+  return new Map(settled.flat())
 }
 
 /** GETs one Graph path per key through `$batch`. The map's keys are the caller's own. */

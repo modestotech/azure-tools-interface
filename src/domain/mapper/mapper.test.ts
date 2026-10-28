@@ -173,6 +173,21 @@ describe('buildAccessModel: findings', () => {
     )
   })
 
+  it('flags a validate-jwt that checks no audience, in both modes', () => {
+    const noAudience = `<policies>
+  <inbound>
+    <validate-jwt header-name="Authorization">
+      <required-claims>
+        <claim name="roles" match="any"><value>Orders.Read</value></claim>
+      </required-claims>
+    </validate-jwt>
+  </inbound>
+  <backend><base /></backend>
+</policies>`
+    expect(findingKinds({ apiPolicy: ok(noAudience) })).toContain('no-audience')
+    expect(findingKinds({ apiPolicy: ok(noAudience), entra: false })).toContain('no-audience')
+  })
+
   it("flags a required role the API doesn't define", () => {
     const readOnly = { ...ORDERS_API_SP, appRoles: ORDERS_API_SP.appRoles.slice(0, 1) }
     expect(findingKinds({ audiences: new Map([[AUDIENCE, ok([sp(readOnly)])]]) })).toContain(
@@ -194,6 +209,35 @@ describe('buildAccessModel: findings', () => {
     expect(findingKinds({ resources: new Map([[RESOURCE, ok([])]]) })).toContain(
       'resource-not-found',
     )
+  })
+})
+
+describe('buildAccessModel: managed identity without client-id', () => {
+  const SYSTEM_IDENTITY_API_POLICY = `<policies>
+  <inbound>
+    <base />
+    <authentication-managed-identity resource="${RESOURCE}" />
+  </inbound>
+  <backend><base /></backend>
+</policies>`
+
+  const withService = (identity: unknown) =>
+    buildAccessModel({
+      ...fixtureInputs(),
+      apiPolicy: ok(SYSTEM_IDENTITY_API_POLICY),
+      service: ok(apimServiceSchema.parse({ ...armFixtures.services[0], identity })),
+    })
+
+  it("uses the service's system-assigned identity", () => {
+    const model = withService({ type: 'SystemAssigned', principalId: 'system-principal' })
+    expect(model.operations[0]?.outbound).toMatchObject({ principalId: 'system-principal' })
+    expect(kinds(model.findings)).not.toContain('no-system-identity')
+  })
+
+  it('flags a service with no system-assigned identity', () => {
+    const model = withService(undefined)
+    expect(model.operations[0]?.outbound).toMatchObject({ principalId: undefined })
+    expect(kinds(model.findings)).toContain('no-system-identity')
   })
 })
 

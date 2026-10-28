@@ -85,6 +85,10 @@ function reportClaims(
   targets: readonly GraphServicePrincipal[],
 ): RequiredClaim | undefined {
   const { findings } = context.collector
+  // Without <audiences>, APIM doesn't check `aud`: a token from the same issuer for any other app
+  // passes. Callers can't be derived from that, so the rule grants nobody here, which would
+  // otherwise look like "locked down" rather than "wide open".
+  if (rule.audiences.length === 0) findings.push({ kind: 'no-audience', operationId })
   for (const claim of rule.requiredClaims) {
     if (claim.name !== ROLES_CLAIM)
       findings.push({ kind: 'unsupported-claim', operationId, claim: claim.name })
