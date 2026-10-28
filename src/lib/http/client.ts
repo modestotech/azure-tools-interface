@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   API_RESOURCES,
+  azTokenCommand,
   checkToken,
   decodeJwt,
   isBlockingIssue,
@@ -102,6 +103,11 @@ export interface HttpClient {
    * is an `invalid-response` error, never silently dropped.
    */
   batch(requests: readonly BatchRequest[], options?: RequestOptions): Promise<BatchResponse[]>
+  /**
+   * The az command for a fresh `api` token in the current tenant, for errors the client doesn't
+   * throw itself (a 401 inside a `$batch` sub-response). Holds the real tenant ID: show it, never log it.
+   */
+  azCommand(api: ApiKind): string
   /** Forgets anything derived from the session (decoded claims, cached mask IDs). Called by "Clear session". */
   reset(): void
 }
@@ -680,5 +686,9 @@ export function createHttpClient(config: HttpClientConfig): HttpClient {
     clearMaskCache()
   }
 
-  return { getJson, getJsonOrNull, getAllPages, batch, reset }
+  function azCommand(api: ApiKind) {
+    return azTokenCommand(api, config.getMaskValues().tenantId)
+  }
+
+  return { getJson, getJsonOrNull, getAllPages, batch, azCommand, reset }
 }

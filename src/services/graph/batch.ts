@@ -36,11 +36,13 @@ function errorCode(body: unknown): string | undefined {
 /**
  * One sub-response as a ResourceResult: 2xx is validated with `schema`, 404 is `empty`, 403 is
  * `forbidden`, anything else is an `error`. Messages carry the status and Graph's error code only.
+ * A 401 gets the same "re-run the az command" message as a plain request, with `azCommand`.
  */
 export function subResponseResult<T>(
   response: BatchResponse,
   url: string,
   schema: z.ZodType<T>,
+  azCommand?: string,
 ): ResourceResult<T> {
   const { status, body } = response
   if (status === 404) return { status: 'empty' }
@@ -54,8 +56,16 @@ export function subResponseResult<T>(
     }
   }
   const code = errorCode(body)
-  const message = `Graph answered ${String(status)}${code ? ` (${code})` : ''} for ${url}.`
-  const error = new HttpError(kindForStatus(status), 'graph', message, { status, url })
+  const answered = `Graph answered ${String(status)}${code ? ` (${code})` : ''} for ${url}.`
+  const message =
+    status === 401
+      ? `Token expired or wrong audience — re-run the az command to get a new Graph token. (${answered})`
+      : answered
+  const error = new HttpError(kindForStatus(status), 'graph', message, {
+    status,
+    url,
+    azCommand: status === 401 ? azCommand : undefined,
+  })
   return status === 403 ? { status: 'forbidden', error } : { status: 'error', error }
 }
 
@@ -80,7 +90,7 @@ async function loadChunk<T>(
   return chunk.map(([key, path], index) => {
     const response = responses[index]
     if (!response) throw new Error(`Unreachable: no $batch response for ${key}`)
-    return [key, subResponseResult(response, graphUrl(path), schema)]
+    return [key, subResponseResult(response, graphUrl(path), schema, client.azCommand('graph'))]
   })
 }
 

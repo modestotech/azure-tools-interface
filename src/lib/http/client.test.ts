@@ -307,6 +307,12 @@ describe('createHttpClient', () => {
     }
   })
 
+  it('gives the az command for the current tenant, for errors it does not throw itself', () => {
+    expect(setup().client.azCommand('graph')).toBe(
+      `az account get-access-token --resource https://graph.microsoft.com --tenant ${TEST_TENANT} --query accessToken -o tsv`,
+    )
+  })
+
   it.each([
     ['arm', ARM_401_INVALID_TOKEN, 'InvalidAuthenticationToken: The access token is invalid.'],
     [

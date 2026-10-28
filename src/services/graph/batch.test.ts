@@ -119,6 +119,23 @@ describe('subResponseResult', () => {
     expect(subResponseResult({ id: '0', status: 429, body: {} }, url, schema)).toMatchObject({
       error: { kind: 'throttled' },
     })
+    const expired = subResponseResult(
+      { id: '0', status: 401, body: { error: { code: 'InvalidAuthenticationToken' } } },
+      url,
+      schema,
+      'az account get-access-token --resource graph',
+    )
+    expect(expired).toMatchObject({
+      status: 'error',
+      error: {
+        kind: 'unauthorized',
+        status: 401,
+        azCommand: 'az account get-access-token --resource graph',
+      },
+    })
+    expect(expired.status === 'error' && expired.error.message).toMatch(
+      /^Token expired or wrong audience — re-run the az command.*InvalidAuthenticationToken/,
+    )
     expect(subResponseResult({ id: '0', status: 500, body: null }, url, schema)).toMatchObject({
       status: 'error',
       error: { kind: 'unexpected-status', status: 500 },
