@@ -5,11 +5,68 @@ import { Label } from '@/components/ui/label'
 import type { AccessModel } from '@/domain'
 import { cn } from '@/lib/utils'
 import { scripts } from '@/scripts/registry'
-import { defaultParams, type ScriptDefinition, type ScriptParams } from '@/scripts/types'
+import {
+  defaultParams,
+  type ScriptDefinition,
+  type ScriptParam,
+  type ScriptParams,
+} from '@/scripts/types'
 import { ArmOnlyNote } from '@/views/shared/ArmOnlyNote'
 import { uiStore, useUi } from './uiStore'
 
-/** A number input per declared param; a cleared or invalid field keeps the last valid value. */
+/** Why `value` can't be used for `param`, or undefined if it can. */
+function paramProblem(param: ScriptParam, value: number): string | undefined {
+  if (!Number.isFinite(value)) return 'Enter a number.'
+  if (param.min !== undefined && value < param.min)
+    return `Enter a number of at least ${String(param.min)}.`
+  return undefined
+}
+
+/**
+ * A number input for one param. A cleared or invalid value isn't passed on: the field says what's
+ * wrong and which value the result still uses.
+ */
+function ParamField({
+  id,
+  param,
+  value,
+  onChange,
+}: {
+  id: string
+  param: ScriptParam
+  value: number
+  onChange: (value: number) => void
+}) {
+  const [problem, setProblem] = useState<string>()
+  const errorId = `${id}-error`
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={id}>{param.label}</Label>
+      <Input
+        id={id}
+        type="number"
+        className="w-32"
+        min={param.min}
+        defaultValue={value}
+        aria-invalid={problem !== undefined}
+        aria-describedby={problem ? errorId : undefined}
+        onChange={(event) => {
+          const next = event.target.valueAsNumber
+          const why = paramProblem(param, next)
+          setProblem(why)
+          if (!why) onChange(next)
+        }}
+      />
+      {problem && (
+        <p id={errorId} className="text-destructive text-xs">
+          {problem} The result uses {value}.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** A number input per declared param. */
 function ParamFields({
   script,
   params,
@@ -22,27 +79,17 @@ function ParamFields({
   if (script.params.length === 0) return null
   return (
     <div className="flex flex-wrap gap-4">
-      {script.params.map((param) => {
-        const id = `script-param-${script.id}-${param.key}`
-        return (
-          <div key={param.key} className="space-y-1">
-            <Label htmlFor={id}>{param.label}</Label>
-            <Input
-              id={id}
-              type="number"
-              className="w-32"
-              min={param.min}
-              defaultValue={params[param.key] ?? param.default}
-              onChange={(event) => {
-                const value = event.target.valueAsNumber
-                if (!Number.isFinite(value) || (param.min !== undefined && value < param.min))
-                  return
-                onChange({ ...params, [param.key]: value })
-              }}
-            />
-          </div>
-        )
-      })}
+      {script.params.map((param) => (
+        <ParamField
+          key={param.key}
+          id={`script-param-${script.id}-${param.key}`}
+          param={param}
+          value={params[param.key] ?? param.default}
+          onChange={(value) => {
+            onChange({ ...params, [param.key]: value })
+          }}
+        />
+      ))}
     </div>
   )
 }
