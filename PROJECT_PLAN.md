@@ -186,6 +186,13 @@ A systematic review for missing error handling, unclear messages, unhandled edge
 - Documentation: the limiter explains how slots are handed over and how a waiter leaves the queue, and guards the abort path.
 - Open: endpoints are fixed to Azure's public cloud (`lib/token/resources.ts`, the CSP and `ALLOWED_ORIGINS`), so Azure Government and Azure China tenants can't be analyzed. Supporting them means choosing a cloud at build time and deriving all three from it. Deferred until such a tenant is in scope.
 
+**M10 — GitHub Pages deployment** (in progress)
+- `.github/workflows/pages.yml` runs on every push to `main` (and by hand): `pnpm typecheck`, `pnpm lint` and `pnpm test`, then the production build, then `actions/deploy-pages`. A red commit is never deployed.
+- The site is a project page under `/<repo>/`, so the workflow builds with Vite's `--base` from `actions/configure-pages`. `pnpm build` and the security tests keep the default `/` for Azure Static Web Apps and Storage.
+- Pages can't set response headers. As on a Storage static website, the CSP comes from the `<meta>` tag alone (no `frame-ancestors`), and `staticwebapp.config.json` is ignored. The app has no client-side routes, so no `404.html` fallback is needed.
+- The deployed site is the production build: it needs real tokens and has no demo mode.
+- Left to do: set the repository's Pages source to "GitHub Actions" (Settings › Pages), then check the first deployment and a live run against ARM from the Pages origin.
+
 ## 3. Key design decisions
 
 - **Request log is a side effect of `lib/http`**. Views and services never log manually, so new views get logging for free.

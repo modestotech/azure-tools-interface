@@ -1,0 +1,61 @@
+# Builds the production site and deploys it to GitHub Pages. The checks run first, so a red
+# commit is never deployed. Pages can't set response headers: the CSP comes from the <meta> tag the
+# build puts in index.html (without frame-ancestors), and staticwebapp.config.json is ignored.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push replaces a queued one, but a running one finishes.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs the pnpm version pinned in package.json › packageManager.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+      - id: pages
+        uses: actions/configure-pages@v6
+
+      # A project site is served from /<repo>/, so assets need that base path. Only this build gets
+      # it: `pnpm build` and the security tests keep the default `/`.
+      - run: pnpm exec vite build --base "${{ steps.pages.outputs.base_path }}/"
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

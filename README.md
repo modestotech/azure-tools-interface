@@ -1,5 +1,7 @@
 # APIM Access Mapper
 
+[![Deploy to GitHub Pages](https://github.com/modestotech/azure-tools-interface/actions/workflows/pages.yml/badge.svg)](https://github.com/modestotech/azure-tools-interface/actions/workflows/pages.yml)
+
 A client-side web app that maps **Azure API Management (APIM) policies** to the **Microsoft Entra ID identities** allowed to call them.
 
 You pick a subscription, an APIM instance and one API. For that API, the app shows:
@@ -66,6 +68,8 @@ Tokens last about an hour. When one expires, the app says so and shows the comma
 ## Deploying
 
 `pnpm build` produces a static `dist/` for Azure Static Web Apps or a Storage static website. The build adds the Content Security Policy to `index.html` and writes `staticwebapp.config.json` with the routing fallback and security headers. The policy only allows connections to ARM and Graph.
+
+Every push to `main` is checked, built and deployed to GitHub Pages by `.github/workflows/pages.yml`. Pages can't set headers, so there the policy comes from the `<meta>` tag only.
 
 ## Documentation
 
