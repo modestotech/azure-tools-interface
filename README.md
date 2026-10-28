@@ -2,56 +2,48 @@
 
 [![Deploy to GitHub Pages](https://github.com/modestotech/azure-tools-interface/actions/workflows/pages.yml/badge.svg)](https://github.com/modestotech/azure-tools-interface/actions/workflows/pages.yml)
 
-A client-side web app that maps **Azure API Management (APIM) policies** to the **Microsoft Entra ID identities** allowed to call them.
+Shows who can call each operation of an Azure API Management (APIM) API, and where the call goes, by reading APIM policies and Microsoft Entra ID straight from the browser.
 
-You pick a subscription, an APIM instance and one API. For that API, the app shows:
+**Live:** https://modestosoftware.com/azure-tools-interface/
 
-- each operation and the policies that protect it
-- the service principals, users and groups that can call it, and why (a role held directly, or through a group)
-- the backend it routes to, and how APIM authenticates to that backend
-- findings: operations anyone can call, plain-HTTP backends, group members that get nothing from the group, policy elements to review by hand, and more
+**Demo:** https://modestosoftware.com/azure-tools-interface/demo/ (fictional data, no Azure account needed: click "Fill in demo tokens")
 
-There is no backend server. The browser calls Azure Resource Manager and Microsoft Graph directly with tokens you paste in. Tokens stay in memory only, and the app sends only read requests (`GET`, plus Graph `$batch` of GETs).
+The demo is the quickest way to see how it works: the access graph, the tables, the findings and the live request log, all on a fictional API.
 
-The app targets one APIM pattern (`validate-jwt` with required roles, `set-backend-service`, managed-identity auth to the backend; see `PROJECT_PLAN.md` §1). Anything outside it is flagged as "needs manual review", never guessed.
+## What it does
 
-## What's in it
+You pick a subscription, an APIM instance and one API. For each operation, the app shows the policy that protects it, which apps, users and groups can call it (directly or through a group), the backend it routes to and how APIM authenticates there. It flags problems such as operations anyone can call, plain-HTTP backends, group members that get nothing from the group, and policy it can't interpret, and every table and analysis exports to CSV or JSON.
 
-- **Overview**: auth coverage and findings by kind, plus the scripts with how much each finds
-- **Operations**: every operation with its auth, callers, backend, outbound auth and findings; CSV/JSON export
-- **Access graph**: group member → role holder → operation → backend. Groups expand on request; filter by operation on large APIs
-- **Principals**: pick an app, user or group and see which operations it can call, and why
-- **Backends**: URL, TLS, the credential mechanism (never its value), and the roles APIM's identity holds there
-- **Scripts**: read-only analyses (operations with no auth, principals with access to more than N operations, ineffective group members, backend issues, unresolved rules), each exportable
-- **Request log**: every request the app makes, live, with subscription and tenant IDs masked
+## Security
+
+The app handles Azure tokens, so it's built to be easy to trust:
+
+- **No backend.** The browser talks only to Azure Resource Manager and Microsoft Graph. The Content Security Policy blocks every other destination.
+- **Tokens in memory only.** Never in `localStorage`, `sessionStorage`, cookies, URLs or logs. "Clear session" wipes tokens and all loaded data.
+- **Read-only, enforced twice.** The HTTP client sends only `GET` (plus Graph `$batch` of GETs), and a separate network guard, loaded before the app, refuses anything else. Tests record every request of a full run and check that the shipped JavaScript contains no write methods.
+- **ARM-only mode.** Skips Microsoft Graph entirely. With a `Reader`-only account, Azure itself refuses any change.
+- **Masked request log.** Subscription and tenant IDs are masked on screen and always in exports.
+- **Isolated demo.** The demo's mock service worker only controls `/demo/`, never the real app.
 
 ## Getting started
 
-Requires a recent Node.js LTS and pnpm (via Corepack).
+### Requirements
+
+- Node.js 24 LTS and pnpm (via Corepack)
+- For real data: Azure CLI, `Reader` (or `API Management Service Reader Role`) on the APIM instance, and directory read access in Entra for the full mode
+
+### Installation
 
 ```bash
+git clone https://github.com/modestotech/azure-tools-interface
+cd azure-tools-interface
 corepack enable pnpm
 pnpm install
-pnpm dev:demo     # fictional demo data, no Azure token needed: click "Fill in demo tokens"
 ```
 
-Or try the hosted demo, with the same fictional data: https://modestosoftware.com/azure-tools-interface/demo/
+### Configuration
 
-## Commands
-
-| Command          | What it does                                     |
-| ---------------- | ------------------------------------------------ |
-| `pnpm dev`       | Start the dev server                             |
-| `pnpm dev:demo`  | Start the dev server with mocked ARM/Graph data  |
-| `pnpm build`     | Type-check and build a static site into `dist/`  |
-| `pnpm preview`   | Serve the built site locally                     |
-| `pnpm test`      | Run the unit tests                               |
-| `pnpm lint`      | Run ESLint and the Prettier check                |
-| `pnpm typecheck` | Run the TypeScript type check                    |
-
-## Using it against Azure
-
-Sign in with `az login`, choose a mode on the token screen, and paste the token(s):
+None: no `.env` file and no secrets. Run `az login` and paste access tokens into the app at runtime:
 
 ```bash
 # ARM: always needed
@@ -60,20 +52,60 @@ az account get-access-token --resource https://management.azure.com --tenant <TE
 az account get-access-token --resource https://graph.microsoft.com --tenant <TENANT_ID> --query accessToken -o tsv
 ```
 
-- **ARM only:** just the ARM token. Use an account with only `Reader` (or `API Management Service Reader Role`) on the APIM instance, and Azure itself refuses any change. You get operations, policies, backends, outbound auth and the findings those show. You don't get who can call.
-- **ARM and Entra:** also the Graph token, for who holds the API's roles and who is in the groups. A Graph token from the Azure CLI can do whatever your account may do in Entra, so prefer an account with no Entra admin roles that owns no apps or groups.
+### Run the project
 
-Either way the app only reads. Two separate guards refuse anything else before it leaves the browser; in ARM-only mode they also refuse every request to Graph.
+```bash
+pnpm dev:demo     # fictional data, no token needed
+pnpm dev          # against your own Azure tenant
+```
 
-Tokens last about an hour. When one expires, the app says so and shows the command to run again; "Clear session" wipes tokens, selections and loaded data.
+`pnpm build` builds the static site into `dist/`; `pnpm typecheck`, `pnpm lint` and `pnpm test` run the checks.
 
-## Deploying
+## Architecture
 
-`pnpm build` produces a static `dist/` for Azure Static Web Apps or a Storage static website. The build adds the Content Security Policy to `index.html` and writes `staticwebapp.config.json` with the routing fallback and security headers. The policy only allows connections to ARM and Graph.
+A static single-page app with no server. Layers depend one way, enforced by ESLint: views and scripts → domain → services → lib. `lib/http` is the guarded HTTP client and request log; `services` holds the ARM and Graph calls, validated with Zod; `domain` parses APIM policy XML and joins it with Entra data into one access model. Views and scripts only read that model and plug in through registries. Rules and conventions are in `CLAUDE.md`, milestones in `PROJECT_PLAN.md`.
 
-Every push to `main` is checked, built and deployed to GitHub Pages by `.github/workflows/pages.yml`: the app at https://modestosoftware.com/azure-tools-interface/ and the demo under `/demo/`. Pages can't set headers, so there the policy comes from the `<meta>` tag only.
+```
+azure-tools-interface/
+├── src/
+│   ├── app/           # shell, token screen, scope picker, session stores
+│   ├── lib/           # HTTP client, read-only guards, request log, JWT checks
+│   ├── services/      # ARM and Graph calls and their query hooks
+│   ├── domain/        # policy parser, mapper, findings
+│   ├── views/         # access graph, operations table, principals, backends
+│   ├── scripts/       # read-only analyses over the model
+│   ├── components/    # shared UI, the Matrix-style request log
+│   └── test/          # anonymized fixtures and MSW mocks
+├── tests/security/    # source scan and production-build checks
+├── security.config.ts # Content Security Policy and hosting headers
+└── .github/workflows/ # checks, build and deploy to GitHub Pages
+```
 
-## Documentation
+## Tech stack
 
-- `CLAUDE.md`: rules, conventions and architecture
-- `PROJECT_PLAN.md`: target pattern, milestones and status
+| Component       | Choice                            | Reason                                                  |
+| --------------- | --------------------------------- | ------------------------------------------------------- |
+| Frontend        | Vite, React, TypeScript (strict)  | Fully static build, no server to host or secure         |
+| Data fetching   | TanStack Query                    | Caching and per-resource loading and errors             |
+| State           | Zustand                           | Small in-memory stores, easy to wipe on "Clear session" |
+| Graph           | React Flow + elkjs                | Interactive, layered access graph                       |
+| Charts / tables | ECharts, TanStack Table + Virtual | Summaries, and tables that stay fast on large tenants   |
+| UI              | Tailwind CSS + shadcn/ui          | Accessible components that work under a strict CSP      |
+| Validation      | Zod, fast-xml-parser              | Check every Azure response; parse policy XML in order   |
+| Testing         | Vitest, Testing Library, MSW      | No live Azure calls in tests; MSW also powers the demo  |
+| CI/CD           | GitHub Actions + GitHub Pages     | Typecheck, lint and tests gate every deploy             |
+
+## Limitations
+
+- Analyzes one API at a time, never a whole APIM instance.
+- Supports one APIM policy pattern (`validate-jwt` with required roles, `set-backend-service`, managed-identity auth to the backend). Anything else is flagged "needs manual review", not interpreted.
+- Shows direct group members only; nested groups aren't expanded.
+- Identifies backends by URL; the Azure resource behind them isn't looked up.
+- Azure public cloud only, not Azure Government or China.
+- Tokens are pasted by hand and last about an hour.
+- GitHub Pages can't send headers, so the hosted site has no `frame-ancestors` protection.
+- The full "ARM and Entra" mode hasn't been checked against a live tenant yet.
+
+## Developed with
+
+Claude Code (agent-driven development) as part of the course Next-Generation Software Development with AI.
