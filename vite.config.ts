@@ -8,7 +8,7 @@ import { defineConfig } from 'vitest/config'
 import { CSP_META, STATIC_WEB_APP_CONFIG } from './security.config.ts'
 
 /**
- * `public/mockServiceWorker.js` is only needed by `pnpm dev:demo`. Vite copies everything in
+ * `public/mockServiceWorker.js` is only needed in demo mode (`pnpm dev:demo`, the Pages demo). Vite copies everything in
  * `public/` into `dist/`, so remove it from every build except demo mode: the deployed site must
  * not ship a service worker.
  */
