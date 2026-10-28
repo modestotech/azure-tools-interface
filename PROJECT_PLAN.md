@@ -190,9 +190,12 @@ A systematic review for missing error handling, unclear messages, unhandled edge
 - `.github/workflows/pages.yml` runs on every push to `main` (and by hand): `pnpm typecheck`, `pnpm lint` and `pnpm test`, then the production build, then `actions/deploy-pages`. A red commit is never deployed.
 - The site is a project page under `/<repo>/`, so the workflow builds with Vite's `--base` from `actions/configure-pages`. `pnpm build` and the security tests keep the default `/` for Azure Static Web Apps and Storage.
 - Pages can't set response headers. As on a Storage static website, the CSP comes from the `<meta>` tag alone (no `frame-ancestors`), and `staticwebapp.config.json` is ignored. The app has no client-side routes, so no `404.html` fallback is needed.
-- The deployed site is the production build: it needs real tokens and has no demo mode.
+- The site root is the production build, which needs real tokens. The demo is deployed beside it (**done**):
+  - `/<repo>/demo/` is a `--mode demo` build (MSW serves the fictional `orders-api`; "Fill in demo tokens" in the banner). The production build stays free of MSW and its service worker, so `tests/security/build.test.ts` is unchanged.
+  - MSW registers its worker under the build's base path (`import.meta.env.BASE_URL` in `main.tsx`), not at the site root. A service worker only controls pages under its own folder, so the demo's worker can't intercept the real app's requests on the same origin.
+  - The production token screen links to the demo when the build sets `VITE_DEMO_URL` (only the Pages workflow does), so other hosts get no dead link.
 - HTTPS only: users paste tokens into the page, and a page served over HTTP can be altered in transit (its CSP `<meta>` tag stripped, a script injected). The default `github.io` address always enforces HTTPS; with a custom domain, tick "Enforce HTTPS" in Settings › Pages as soon as the certificate is issued.
-- Pages source set to "GitHub Actions" (**done**). Left to do: check the first deployment and a live run against ARM from the Pages origin.
+- Pages source set to "GitHub Actions" (**done**). First deployment checked (**done**): served from the account's custom domain, `https://modestosoftware.com/azure-tools-interface/`, with HTTP redirected to HTTPS. Left to do: a live run against ARM from that origin.
 
 ## 3. Key design decisions
 

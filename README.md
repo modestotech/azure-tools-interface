@@ -35,6 +35,8 @@ pnpm install
 pnpm dev:demo     # fictional demo data, no Azure token needed: click "Fill in demo tokens"
 ```
 
+Or try the hosted demo, with the same fictional data: https://modestosoftware.com/azure-tools-interface/demo/
+
 ## Commands
 
 | Command          | What it does                                     |
@@ -69,7 +71,7 @@ Tokens last about an hour. When one expires, the app says so and shows the comma
 
 `pnpm build` produces a static `dist/` for Azure Static Web Apps or a Storage static website. The build adds the Content Security Policy to `index.html` and writes `staticwebapp.config.json` with the routing fallback and security headers. The policy only allows connections to ARM and Graph.
 
-Every push to `main` is checked, built and deployed to GitHub Pages by `.github/workflows/pages.yml`. Pages can't set headers, so there the policy comes from the `<meta>` tag only.
+Every push to `main` is checked, built and deployed to GitHub Pages by `.github/workflows/pages.yml`: the app at https://modestosoftware.com/azure-tools-interface/ and the demo under `/demo/`. Pages can't set headers, so there the policy comes from the `<meta>` tag only.
 
 ## Documentation
 
