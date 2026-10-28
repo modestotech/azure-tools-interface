@@ -111,3 +111,30 @@ describe('TokenScreen in ARM-only mode', () => {
     expect(field('Graph')).toBeInTheDocument()
   })
 })
+
+describe('TokenScreen demo link', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('links to no demo unless the build names one', () => {
+    setup()
+    expect(screen.queryByRole('link', { name: /demo/ })).not.toBeInTheDocument()
+  })
+
+  it('links to the demo hosted beside the app', () => {
+    vi.stubEnv('VITE_DEMO_URL', '/azure-tools-interface/demo/')
+    setup()
+    expect(screen.getByRole('link', { name: /Try the demo/ })).toHaveAttribute(
+      'href',
+      '/azure-tools-interface/demo/',
+    )
+  })
+
+  it('does not link to itself in the demo', () => {
+    vi.stubEnv('VITE_DEMO_URL', '/azure-tools-interface/demo/')
+    vi.stubEnv('MODE', 'demo')
+    setup()
+    expect(screen.queryByRole('link', { name: /demo/ })).not.toBeInTheDocument()
+  })
+})

@@ -8,6 +8,21 @@ import { useSession } from './sessionStore'
 import { TenantField } from './TenantField'
 import { TokenField } from './TokenField'
 
+/** Points to the demo build hosted beside this one (GitHub Pages), if the build was told of one. */
+function DemoLink() {
+  const url = import.meta.env.VITE_DEMO_URL
+  if (!url || import.meta.env.MODE === 'demo') return null
+  return (
+    <p className="text-muted-foreground text-sm">
+      No token at hand?{' '}
+      <a className="underline underline-offset-4" href={url}>
+        Try the demo with fictional data
+      </a>
+      .
+    </p>
+  )
+}
+
 /**
  * Where the user picks the mode and pastes the tokens. The notice comes first, before anything is
  * pasted. In ARM-only mode there is no Graph token field at all.
@@ -28,6 +43,7 @@ export function TokenScreen() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          <DemoLink />
           <EntraModeField />
           <TenantField />
           <TokenField api="arm" />
