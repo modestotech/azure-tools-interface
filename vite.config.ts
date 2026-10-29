@@ -55,11 +55,29 @@ function securityHeaders(): Plugin {
   }
 }
 
+const TITLE = '<title>APIM Access Mapper</title>'
+
+/** Demo mode (`pnpm dev:demo`, the Pages demo): marks the browser tab, so it isn't mistaken for the real app. */
+function demoTitle(): Plugin {
+  let demo = false
+  return {
+    name: 'demo-title',
+    configResolved(config) {
+      demo = config.mode === 'demo'
+    },
+    transformIndexHtml(html) {
+      if (!demo) return html
+      if (!html.includes(TITLE)) throw new Error(`index.html must contain ${TITLE}`)
+      return html.replace(TITLE, '<title>APIM Access Mapper - DEMO</title>')
+    },
+  }
+}
+
 /** Tests that need a DOM: React components (`.tsx`) and the app shell, which uses browser APIs. */
 const DOM_TESTS = ['src/**/*.test.tsx', 'src/app/**/*.test.ts']
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), dropMockServiceWorker(), securityHeaders()],
+  plugins: [react(), tailwindcss(), dropMockServiceWorker(), securityHeaders(), demoTitle()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
