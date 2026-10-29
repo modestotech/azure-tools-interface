@@ -2,35 +2,25 @@
 
 [![Deploy to GitHub Pages](https://github.com/modestotech/azure-tools-interface/actions/workflows/pages.yml/badge.svg)](https://github.com/modestotech/azure-tools-interface/actions/workflows/pages.yml)
 
-Shows who can call each operation of an Azure API Management (APIM) API, and where the call goes, by reading APIM policies and Microsoft Entra ID straight from the browser.
+
+Visualiserar vem som kan kalla operation i Azure API Management (APIM) API, och vart anropet går.
 
 **Live:** https://modestosoftware.com/azure-tools-interface/
 
-**Demo:** https://modestosoftware.com/azure-tools-interface/demo/ (fictional data, no Azure account needed: click "Fill in demo tokens")
+**Demo:** https://modestosoftware.com/azure-tools-interface/demo/ (syntetisk data, inget behov av riktiga Azure tokens)
 
-The demo is the quickest way to see how it works: the access graph, the tables, the findings and the live request log, all on a fictional API.
+## Vad gör appen
 
-## What it does
+Man matar in 2 tokens, en för Entra och en för ARM (Azure Resource Manager), och väljer sedan Subscription, APIM-instans och ett API. För varje operation på API:t visas sedan vilka appar, användare och grupper som kan anropa den, samt vart anropet routas i backenden. Utöver detta flaggar den för potentiella problem relaterat till bl. a. säkerhet, och möjliggör export till CSV och JSON. 
 
-You pick a subscription, an APIM instance and one API. For each operation, the app shows the policy that protects it, which apps, users and groups can call it (directly or through a group), the backend it routes to and how APIM authenticates there. It flags problems such as operations anyone can call, plain-HTTP backends, group members that get nothing from the group, and policy it can't interpret, and every table and analysis exports to CSV or JSON.
+> Har man ingen Entra-token, fungerar det även att köra med bara ARM, fast då får man ingen överblick över vilka användare etc. som kan anropa API:t.
 
-## Security
+## Komma igång
 
-The app handles Azure tokens, so it's built to be easy to trust:
+### Krav
 
-- **No backend.** The browser talks only to Azure Resource Manager and Microsoft Graph. The Content Security Policy blocks every other destination.
-- **Tokens in memory only.** Never in `localStorage`, `sessionStorage`, cookies, URLs or logs. "Clear session" wipes tokens and all loaded data.
-- **Read-only, enforced twice.** The HTTP client sends only `GET` (plus Graph `$batch` of GETs), and a separate network guard, loaded before the app, refuses anything else. Tests record every request of a full run and check that the shipped JavaScript contains no write methods.
-- **ARM-only mode.** Skips Microsoft Graph entirely. With a `Reader`-only account, Azure itself refuses any change.
-- **Masked request log.** Subscription and tenant IDs are masked on screen and always in exports.
-- **Isolated demo.** The demo's mock service worker only controls `/demo/`, never the real app.
-
-## Getting started
-
-### Requirements
-
-- Node.js 24 LTS and pnpm (via Corepack)
-- For real data: Azure CLI, `Reader` (or `API Management Service Reader Role`) on the APIM instance, and directory read access in Entra for the full mode
+- Node.js 24 LTS och pnpm (via Corepack)
+- För riktig data: Azure CLI, `Reader` (eller `API Management Service Reader Role`) på APIM-instansen, och directory read access i Entra för full visualisering
 
 ### Installation
 
@@ -41,44 +31,44 @@ corepack enable pnpm
 pnpm install
 ```
 
-### Configuration
+### Konfiguration
 
-None: no `.env` file and no secrets. Run `az login` and paste access tokens into the app at runtime:
+> Det finns ingen `.env`-fil och inga secrets. Man kör `az login` för att lyfta ut tokens och klistrar in i appen. Dessa cachas inte och försvinner vid refresh.
 
 ```bash
-# ARM: always needed
+# ARM: Krav
 az account get-access-token --resource https://management.azure.com --tenant <TENANT_ID> --query accessToken -o tsv
-# Graph: only for "ARM and Entra"
+# Graph: Behöves bara då man vill ha "ARM och Entra"
 az account get-access-token --resource https://graph.microsoft.com --tenant <TENANT_ID> --query accessToken -o tsv
 ```
 
-### Run the project
+### Köra projektet lokalt
 
 ```bash
-pnpm dev:demo     # fictional data, no token needed
-pnpm dev          # against your own Azure tenant
+pnpm dev:demo     # syntetisk data, ingen token behövs
+pnpm dev          # mot en riktig Azure-tenant
 ```
 
-`pnpm build` builds the static site into `dist/`; `pnpm typecheck`, `pnpm lint` and `pnpm test` run the checks.
+`pnpm build` bygger den statiska siten till `dist/`; `pnpm typecheck`, `pnpm lint` and `pnpm test` kör checkar.
 
 ## Architecture
 
-A static single-page app with no server. Layers depend one way, enforced by ESLint: views and scripts → domain → services → lib. `lib/http` is the guarded HTTP client and request log; `services` holds the ARM and Graph calls, validated with Zod; `domain` parses APIM policy XML and joins it with Entra data into one access model. Views and scripts only read that model and plug in through registries. Rules and conventions are in `CLAUDE.md`, milestones in `PROJECT_PLAN.md`.
+En statisk ensidesapp utan server. Lagren är bara beroende i en riktning, vilket ESLint upprätthåller: views och scripts → domain → services → lib. `lib/http` är den skyddade HTTP-klienten och förfrågningsloggen. `services` innehåller anropen till ARM och Graph, som valideras med Zod. `domain` tolkar APIM-policyernas XML och kombinerar den med data från Entra till en gemensam åtkomstmodell. Views och scripts läser bara från den modellen och kopplas in via register. Regler och konventioner finns i `CLAUDE.md` och milstolpar under utvecklingen i `PROJECT_PLAN.md`.
 
 ```
 azure-tools-interface/
 ├── src/
-│   ├── app/           # shell, token screen, scope picker, session stores
-│   ├── lib/           # HTTP client, read-only guards, request log, JWT checks
-│   ├── services/      # ARM and Graph calls and their query hooks
-│   ├── domain/        # policy parser, mapper, findings
-│   ├── views/         # access graph, operations table, principals, backends
-│   ├── scripts/       # read-only analyses over the model
-│   ├── components/    # shared UI, the Matrix-style request log
-│   └── test/          # anonymized fixtures and MSW mocks
-├── tests/security/    # source scan and production-build checks
-├── security.config.ts # Content Security Policy and hosting headers
-└── .github/workflows/ # checks, build and deploy to GitHub Pages
+│   ├── app/           # skal, token-skärm, scope-väljare, sessionslager
+│   ├── lib/           # HTTP-klient, skrivskydd, förfrågningslogg, JWT-kontroller
+│   ├── services/      # anrop till ARM och Graph med tillhörande query-hooks
+│   ├── domain/        # policy-tolk, mappning, fynd
+│   ├── views/         # åtkomstgraf, operationstabell, principaler, backends
+│   ├── scripts/       # skrivskyddade analyser av modellen
+│   ├── components/    # gemensamma UI-komponenter, den Matrix-inspirerade förfrågningsloggen
+│   └── test/          # anonymiserade fixturer och MSW-mockar
+├── tests/security/    # källkodsskanning och kontroller av produktionsbygget
+├── security.config.ts # Content Security Policy och hosting-headers
+└── .github/workflows/ # kontroller, bygge och driftsättning till GitHub Pages
 ```
 
 ## Tech stack
@@ -95,17 +85,17 @@ azure-tools-interface/
 | Testing         | Vitest, Testing Library, MSW      | No live Azure calls in tests; MSW also powers the demo  |
 | CI/CD           | GitHub Actions + GitHub Pages     | Typecheck, lint and tests gate every deploy             |
 
-## Limitations
+## Begränsningar
 
-- Analyzes one API at a time, never a whole APIM instance.
-- Supports one APIM policy pattern (`validate-jwt` with required roles, `set-backend-service`, managed-identity auth to the backend). Anything else is flagged "needs manual review", not interpreted.
-- Shows direct group members only; nested groups aren't expanded.
-- Identifies backends by URL; the Azure resource behind them isn't looked up.
-- Azure public cloud only, not Azure Government or China.
-- Tokens are pasted by hand and last about an hour.
-- GitHub Pages can't send headers, so the hosted site has no `frame-ancestors` protection.
-- The full "ARM and Entra" mode hasn't been checked against a live tenant yet.
+- Analyserar ett API i taget, aldrig en hel APIM-instans.
+- Stöder ett enda mönster för APIM-policyer baserat på min nuvarande kunds användning (`validate-jwt` med obligatoriska roller, `set-backend-service` och autentisering mot backend med managed identity). Allt annat flaggas som "behöver manuell granskning" och tolkas inte.
+- Identifierar backends via URL. Azure-resursen bakom dem slås inte upp.
+- Token klistras in manuellt och gäller i ungefär en timme. Det är en begränsning, men ett medvetet val: verktyget fordrar då inte en egen appregistrering och att ett inloggningsflöde för delegerade behörigheter sätts upp.
 
-## Developed with
+## Utvecklad med
 
-Claude Code (agent-driven development) as part of the course Next-Generation Software Development with AI.
+Claude Code (agentdriven utveckling) som del av kursen Next-Generation Software Development with AI.
+
+## CV-punkt
+
+Designade och utvecklade med hjälp av agentdriven utveckling (Claude Code) en webbapp som visualiserar åtkomst (genom Azure Entra) till Azure API Management-API:er, samt hur API:erna är uppsatta. Appen visar samband som är svåra att överblicka genom portalen, eller enstaka CLI-anrop. Bland annat följande tekniker användes: React, TypeScript, TanStack Query, React Flow och Tailwind CSS. Den är tillgänglig på https://modestotech.github.io/azure-tools-interface/.
